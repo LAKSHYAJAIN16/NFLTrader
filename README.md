@@ -1,61 +1,26 @@
 # NFLTrader
 
-Watches an NFL game live (via a free ESPN feed, or optionally OpenCV/OCR
-against a broadcast video feed) and narrates, play by play, whether the win
-probability should move up or down and why - then (optionally) paper-trades
-any resulting edge against Polymarket. No real funds or wallet are involved
-anywhere in this project; every "bet" is a simulated position tracked
-locally.
+I wanted to see if I could turn live NFL games into a real-time win-probability feed, then check whether that number ever disagrees with what Polymarket thinks. So this watches a game live (free ESPN feed by default, or optionally OpenCV/OCR reading a broadcast's scoreboard graphic directly), narrates play by play whether win probability should be swinging up or down and why, and -- if you want -- paper-trades any edge it finds against Polymarket. No real money or wallet touches this anywhere; every "bet" is a simulated position tracked locally.
 
-## The core loop: live game state -> insights
+## The core loop: game state to insights
 
-1. **`src/espn_feed.py`** - the default, recommended source for `main.py
-   live`: polls ESPN's free public scoreboard/summary API every few seconds.
-   Needs no API key and no per-broadcast calibration, and updates within
-   seconds of a play. `src/cv/scoreboard_reader.py` (OpenCV + Tesseract OCR)
-   is an alternate source (`--source cv`) for reading the scoreboard graphic
-   directly off a video feed - useful for a source ESPN doesn't cover, or as
-   a redundant cross-check - but it's slower to set up (needs a calibrated
-   region-of-interest per broadcast) and isn't the default.
-2. **`src/insights.py`** - `InsightEngine` takes that stream of game states
-   and, for every meaningful change, explains the win-probability swing in
-   plain English: which team it favors, by how many points, and why
-   (touchdown, field goal, safety, turnover/punt, first down, or just the
-   clock running down). It filters out noise below `INSIGHT_MIN_DELTA` so it
-   doesn't spam a message every few seconds.
-3. **`src/win_probability.py`** - the model behind the numbers: blends a
-   pregame Elo prior (`src/elo.py`, bootstrapped from nflverse historical
-   results) with score differential, time remaining, possession, and field
-   position - weighted so the pregame prior matters most early and the score
-   dominates as the clock runs out.
+1. **`src/espn_feed.py`** is the default source for `main.py live` -- it polls ESPN's free public scoreboard/summary API every few seconds. No API key, no calibration, updates within seconds of a play. `src/cv/scoreboard_reader.py` (OpenCV + Tesseract) is the alternate path (`--source cv`) for reading the scoreboard straight off a video feed -- useful for something ESPN doesn't cover, or as a cross-check -- but it needs a calibrated region-of-interest per broadcast, so it's more setup and not the default.
+2. **`src/insights.py`** (`InsightEngine`) takes that stream of game states and, whenever something meaningful changes, explains the win-probability swing in plain English -- which team it favors, by how many points, and why (touchdown, field goal, safety, turnover, first down, or just the clock draining). Swings below `INSIGHT_MIN_DELTA` get filtered out so it's not spamming you every few seconds.
+3. **`src/win_probability.py`** is the model behind the numbers -- it blends a pregame Elo prior (`src/elo.py`, bootstrapped off nflverse's historical results) with score differential, time remaining, possession, and field position. The prior matters most early in the game; score takes over as the clock runs out.
 
-Try it right now with no video feed or network access needed:
+You can try the whole insight loop right now with zero network access or video:
 
 ```
 python tools/demo_insights.py
 ```
 
-That replays a scripted 4th-quarter sequence (a red-zone drive ending in a
-pick-six) through the real `InsightEngine` and prints the same insight
-narration `live` mode would.
+That replays a scripted 4th-quarter sequence (a red-zone drive ending in a pick-six) through the real `InsightEngine` and prints the same narration `live` mode would give you.
 
-## Live play analysis: catch-probability while the ball is in the air
+## Catching the ball before it lands
 
-`src/cv/trajectory.py` (`TrajectoryTracker`) is a separate, faster-latency
-idea from the score/clock loop above: a score feed can only ever tell you a
-play *already happened*. This module instead fits a trajectory to a thrown
-ball's last few tracked (x, y) positions, projects where it's going to land,
-and estimates catch probability from how many people are contesting that
-spot - updating every frame while the ball is airborne. It's pure math with
-no video/model dependency, so it's fully unit-tested
-(`tests/test_trajectory.py`) independent of the detector that would feed it.
+`src/cv/trajectory.py` (`TrajectoryTracker`) is a separate idea from the score/clock stuff above -- a score feed can only tell you a play already happened. This fits a trajectory to a thrown ball's last few tracked positions, projects where it's landing, and estimates catch probability from how many people are contesting that spot, updating every frame while the ball's in the air. It's pure math, no model dependency, so it's fully unit tested (`tests/test_trajectory.py`) independent of whatever feeds it detections.
 
-`src/cv/ball_tracker.py` is that detector: a pretrained YOLOv8 model (via
-`ultralytics`) run per-frame to find the ball and people, feeding
-`Detection`s into the tracker above. This piece is explicitly unproven -
-a small, fast-moving football at broadcast resolution is a hard target for
-a generic COCO-trained detector, and it hasn't been run against real video
-in this environment.
+`src/cv/ball_tracker.py` is that detector -- a pretrained YOLOv8 model run per frame to find the ball and people. I'll be honest, this piece is unproven: a small fast-moving football at broadcast resolution is a hard target for a generic COCO-trained detector, and I haven't run it against real video yet.
 
 Try the tracker's math with no video or model download needed:
 
@@ -63,23 +28,11 @@ Try the tracker's math with no video or model download needed:
 python tools/demo_play_analysis.py
 ```
 
-Simulates an uncontested catch and a contested one (a defender closing in)
-and prints catch probability frame by frame as each scripted throw arcs in.
+That simulates an uncontested catch and a contested one (defender closing in) and prints catch probability frame by frame as scripted throws arc in.
 
-### Roboflow detector (recommended over the COCO fallback)
+### Roboflow detector (better than the COCO fallback)
 
-`src/cv/ball_tracker.py`'s generic COCO YOLO wasn't trained on American
-football specifically - its "sports ball" class comes from photos of mostly
-stationary balls across many sports, so recall on a small fast-moving NFL
-football in broadcast motion blur is poor. [Roboflow Universe hosts models
-fine-tuned specifically on American football footage](https://universe.roboflow.com/search?q=class%3Afootball) -
-e.g. Roboflow's own blog demonstrates [RF-DETR + ByteTrack fine-tuned on an
-NFL player dataset](https://blog.roboflow.com/american-football-player-tracker/)
-(74.8% mAP@50, 90.8% precision), and Universe separately lists ball-specific
-and player-specific American football detection models. `src/cv/roboflow_tracker.py`
-is a drop-in alternative to `ball_tracker.py` (same `.detect(frame, frame_idx)`
-interface, both driven by the shared `src/cv/play_watcher.py` loop) that
-calls a Roboflow-hosted model instead of running YOLO locally:
+The generic COCO YOLO in `ball_tracker.py` wasn't trained on football specifically, so its "sports ball" class does poorly on a small fast ball in broadcast motion blur. Roboflow Universe hosts models fine-tuned on actual American football footage -- Roboflow's own blog has an RF-DETR + ByteTrack tracker trained on an NFL dataset (74.8% mAP@50, 90.8% precision), and there are separate ball- and player-specific models too. `src/cv/roboflow_tracker.py` is a drop-in replacement for `ball_tracker.py` (same `.detect(frame, frame_idx)` interface, both driven by the shared `src/cv/play_watcher.py` loop) that calls a Roboflow-hosted model instead of running YOLO locally:
 
 ```
 pip install inference-sdk
@@ -88,28 +41,15 @@ export ROBOFLOW_BALL_MODEL_ID=<project-slug>/<version>      # from a Universe mo
 export ROBOFLOW_PLAYER_MODEL_ID=<project-slug>/<version>    # optional, ball-only also works
 ```
 
-Pick the actual model id yourself from a Universe listing that matches your
-footage (American football, not soccer - several similarly-named Universe
-projects are soccer) and sanity-check its sample predictions before trusting
-it; this project can't verify class names or detection quality against a
-real broadcast in this environment, same caveat as the COCO path.
+Pick the model id yourself from a Universe listing that actually matches your footage -- several similarly-named projects are soccer, not football -- and sanity-check its predictions before trusting it. Same caveat as the COCO path: I can't verify detection quality against real broadcast video in this environment.
 
 ## Optional: news/injury signal
 
-`src/news_signal.py` watches a fixed list of trusted NFL insider accounts
-(Adam Schefter, Tom Pelissero, etc.) on X for injury/inactive news - a kind
-of edge no score feed or CV pipeline can see, since it's information from
-off the field. It needs a paid `X_BEARER_TOKEN`; without one it no-ops
-(`is_configured()` returns `False`) rather than erroring.
+`src/news_signal.py` watches a fixed list of trusted NFL insiders (Adam Schefter, Tom Pelissero, etc.) on X for injury/inactive news -- an edge no score feed or CV pipeline can see, since it's happening off the field. It needs a paid `X_BEARER_TOKEN`; without one it just no-ops (`is_configured()` returns `False`) instead of erroring out.
 
 ## Optional: paper-trading Polymarket off those insights
 
-`src/polymarket_client.py` reads live NFL moneyline markets from Polymarket's
-public Gamma API (no auth needed - it's read-only). `src/strategy.py` compares
-the model's win probability against Polymarket's price and, if they diverge
-by more than `EDGE_THRESHOLD`, sizes a fractional-Kelly paper bet
-(`src/paper_broker.py` tracks a simulated bankroll/positions/P&L; nothing is
-ever sent to a real wallet).
+`src/polymarket_client.py` reads live NFL moneyline markets from Polymarket's public Gamma API (read-only, no auth needed). `src/strategy.py` compares my model's win probability against Polymarket's price, and if they diverge by more than `EDGE_THRESHOLD`, sizes a fractional-Kelly paper bet. `src/paper_broker.py` tracks a simulated bankroll, positions, and P&L -- nothing ever touches a real wallet.
 
 ```
 python main.py pregame                     # scan the coming week's markets, paper-trade any Elo edge
@@ -131,19 +71,14 @@ python main.py live --source cv --video <path_or_url> --home KC --away SF
 pip install -r requirements.txt
 ```
 
-The CV extras (`opencv-python`, `pytesseract`, `ultralytics`) are only
-needed for `--source cv` and the ball-tracking/play-analysis path - they're
-listed in `requirements.txt` but you can skip installing them if you're
-sticking to the default ESPN feed and pregame/status/settle modes.
+The CV extras (`opencv-python`, `pytesseract`, `ultralytics`) are only needed for `--source cv` and the ball-tracking path -- they're in `requirements.txt` but you can skip them if you're sticking to the default ESPN feed and the pregame/status/settle commands.
 
 For CV mode you also need the Tesseract OCR binary on your PATH:
 - Windows: https://github.com/UB-Mannheim/tesseract/wiki
 - macOS: `brew install tesseract`
 - Linux: `apt install tesseract-ocr`
 
-`--source cv` needs a calibrated scoreboard region-of-interest for your
-video source, since the graphic's on-screen position and layout differ by
-broadcast:
+`--source cv` needs a calibrated scoreboard region-of-interest for your video source, since the graphic's position and layout differ by broadcast:
 
 ```
 python tools/save_sample_frame.py <video_path_or_url> --time 30 --out frame.png
@@ -152,30 +87,17 @@ cp data/roi.json.example data/roi.json
 # edit data/roi.json with your measured [x, y, width, height] boxes
 ```
 
-`down_distance`, `field_position`, and the two `possession_*_marker` boxes
-are optional - without them the engine still catches scores and clock-driven
-swings, it just can't call out first downs, field position, or possession
-changes. Field-position OCR expects text like "OWN 35" / "OPP 22"; broadcasts
-that render it differently (e.g. a team abbreviation) will need
-`ScoreboardReader._parse_yard_line` adjusted, since this is inherently the
-most broadcast-specific part of the pipeline and hasn't been tested against
-a real feed here.
+`down_distance`, `field_position`, and the two `possession_*_marker` boxes are optional -- without them the engine still catches scores and clock-driven swings, it just can't call out first downs, field position, or possession changes. Field-position OCR expects text like "OWN 35" / "OPP 22"; if your broadcast renders it differently you'll need to tweak `ScoreboardReader._parse_yard_line`, since this is the most broadcast-specific part of the whole pipeline and I haven't tested it against a real feed.
 
-## Tech stack
+## How it's built
 
-- **Language**: Python, stdlib `argparse` CLI (`main.py`) - a script/CLI
-  tool, not a web service.
-- **Data/HTTP**: `requests` against ESPN's public scoreboard API, Polymarket's
-  Gamma/CLOB APIs, and (optionally) X's recent-search API; `nflverse`'s
-  historical games CSV bootstraps the Elo model.
-- **CV (optional)**: `opencv-python` + `pytesseract` (Tesseract OCR) for
-  scoreboard reading; `ultralytics` (YOLOv8) for ball/person detection.
-- **Persistence**: flat JSON/CSV under `state/` (Elo ratings, paper
-  portfolio, trade log) - no database.
-- **Tests**: `pytest`, covering Elo, ESPN feed parsing, insights, strategy,
-  win probability, and the trajectory tracker's pure math.
+- Plain Python, `argparse` CLI in `main.py` -- a script, not a web service.
+- `requests` against ESPN's public scoreboard API, Polymarket's Gamma/CLOB APIs, and optionally X's search API; nflverse's historical games CSV bootstraps the Elo model.
+- CV bits are optional: `opencv-python` + `pytesseract` for scoreboard OCR, `ultralytics` (YOLOv8) for ball/person detection.
+- State lives in flat JSON/CSV under `state/` (Elo ratings, paper portfolio, trade log) -- no database.
+- Tests run under `pytest`, covering Elo, ESPN feed parsing, insights, strategy, win probability, and the trajectory tracker's math.
 
-## Architecture
+Layout, if you're poking around:
 
 ```
 config.py                    thresholds, paths, team-name -> abbreviation map
@@ -200,8 +122,7 @@ tools/demo_play_analysis.py  runs TrajectoryTracker over a scripted throw, no vi
 tools/save_sample_frame.py   grabs a frame from a video source for ROI calibration
 ```
 
-State (`state/elo_ratings.json`, `state/portfolio.json`, `state/trade_log.csv`)
-persists between runs and is gitignored.
+`state/elo_ratings.json`, `state/portfolio.json`, and `state/trade_log.csv` persist between runs and are gitignored.
 
 ## Tests
 
@@ -209,17 +130,8 @@ persists between runs and is gitignored.
 pytest
 ```
 
-Tests are pure/offline - no network calls, no API keys, no real video or
-model downloads required.
+All offline -- no network calls, no API keys, no real video or model downloads.
 
-## Going live (not implemented)
+## What's not here: actually placing real bets
 
-This intentionally stops short of real order placement. To extend it:
-Polymarket's `py-clob-client` package handles auth (a Polygon wallet private
-key) and order signing/submission against the CLOB. You'd swap
-`PaperBroker.place_bet` for a real `place_order` call, and you'd want a lot
-more testing first - both a backtest of the Elo edge against historical
-closing lines, and real-world validation of the ball-tracking/OCR pipelines
-against actual broadcast footage (everything here has been tested against
-live Polymarket/ESPN data and scripted sequences, but not against a real
-broadcast video feed).
+This intentionally stops short of real order placement. If I ever wanted to extend it, Polymarket's `py-clob-client` package handles auth (a Polygon wallet private key) and order signing against the CLOB -- you'd swap `PaperBroker.place_bet` for a real `place_order` call. I'd also want a lot more validation first: backtesting the Elo edge against historical closing lines, and testing the ball-tracking/OCR pipelines against actual broadcast footage. Everything here has been tested against live Polymarket/ESPN data and scripted sequences, but not against a real broadcast video feed.
