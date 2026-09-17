@@ -5,12 +5,14 @@ No API key or wallet is required for market data - only order placement
 """
 
 import json
+import re
 
 import requests
 
 import config
 
 _nfl_tag_id_cache = None
+_SLUG_FROM_URL_RE = re.compile(r"polymarket\.com/sports/nfl/([a-z0-9-]+)", re.IGNORECASE)
 
 
 def _get_nfl_tag_id():
@@ -106,6 +108,62 @@ def get_nfl_markets(active_only=True):
             })
 
     return markets
+
+
+def parse_event_slug(slug_or_url):
+    """Accepts either a bare event slug or a full polymarket.com game URL."""
+    m = _SLUG_FROM_URL_RE.search(slug_or_url)
+    return m.group(1) if m else slug_or_url.strip()
+
+
+def get_event_markets(slug_or_url):
+    """Fetches EVERY market Polymarket lists for a single game, generically -
+    no filtering by market type. Returns (home_info, away_info, markets),
+    where markets is a list of raw market dicts (each with 'question',
+    'groupItemTitle', 'sportsMarketType', 'outcomes' (list), 'outcomePrices'
+    (list of float), 'conditionId', 'closed') straight off the Gamma API,
+    for src/market_catalog.py to interpret.
+
+    This is the procedural, per-game entry point (`main.py trade-game
+    <slug_or_url>`) - as opposed to get_nfl_markets(), which bulk-scans the
+    whole week's moneylines for the default `pregame` command.
+    """
+    slug = parse_event_slug(slug_or_url)
+    resp = requests.get(f"{config.GAMMA_API}/events", params={"slug": slug}, timeout=15)
+    resp.raise_for_status()
+    events = resp.json()
+    if not events:
+        raise ValueError(f"No Polymarket event found for slug '{slug}'")
+    event = events[0]
+
+    teams = event.get("teams")
+    if not teams or len(teams) != 2:
+        raise ValueError(f"Event '{slug}' doesn't carry the expected two-team structure")
+    home = next((t for t in teams if t.get("ordering") == "home"), None)
+    away = next((t for t in teams if t.get("ordering") == "away"), None)
+    if not home or not away:
+        raise ValueError(f"Event '{slug}' is missing home/away ordering")
+
+    markets = []
+    for m in event.get("markets", []):
+        outcomes = _parse_json_field(m.get("outcomes"))
+        prices = _parse_json_field(m.get("outcomePrices"))
+        if not outcomes or not prices or len(outcomes) != len(prices):
+            continue
+        markets.append({
+            "market_id": m.get("conditionId") or m.get("id"),
+            "question": m.get("question", ""),
+            "group_item_title": m.get("groupItemTitle"),
+            "sports_market_type": m.get("sportsMarketType"),
+            "outcomes": outcomes,
+            "prices": [float(p) for p in prices],
+            "closed": m.get("closed", False),
+            "active": m.get("active", True),
+        })
+
+    home_info = {"abbr": _team_abbr(home), "alias": home.get("alias"), "name": home.get("name")}
+    away_info = {"abbr": _team_abbr(away), "alias": away.get("alias"), "name": away.get("name")}
+    return home_info, away_info, markets
 
 
 def get_market_price(condition_id):
