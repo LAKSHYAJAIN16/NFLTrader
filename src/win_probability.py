@@ -29,12 +29,14 @@ def seconds_remaining(quarter, clock_seconds):
 
 
 def live_home_win_prob(pregame_home_prob, home_score, away_score, quarter, clock_seconds,
-                        possession_home=None):
+                        possession_home=None, yard_line=None):
     """Returns the model's live estimate that the home team wins.
 
     - Early in the game the pregame Elo prior dominates.
     - As time runs out, the actual score differential dominates.
     - Possession of the ball is worth a small bump.
+    - Field position (yard_line: yards to the possessing team's end zone, 0-100)
+      adds a further bump proportional to how close they are to scoring.
     """
     secs_left = max(0.0, min(seconds_remaining(quarter, clock_seconds), REGULATION_SECONDS))
     time_frac_elapsed = 1.0 - (secs_left / REGULATION_SECONDS)
@@ -51,5 +53,9 @@ def live_home_win_prob(pregame_home_prob, home_score, away_score, quarter, clock
         blended += config.WP_POSSESSION_BONUS * (1 - time_frac_elapsed * 0.5)
     elif possession_home is False:
         blended -= config.WP_POSSESSION_BONUS * (1 - time_frac_elapsed * 0.5)
+
+    if yard_line is not None and possession_home is not None:
+        field_position_bonus = config.WP_FIELD_POSITION_MAX * (1 - yard_line / 100.0)
+        blended += field_position_bonus if possession_home else -field_position_bonus
 
     return min(max(blended, 0.001), 0.999)

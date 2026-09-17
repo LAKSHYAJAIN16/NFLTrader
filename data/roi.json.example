@@ -1,7 +1,11 @@
 {
-  "_comment": "Pixel [x, y, width, height] boxes tightly cropping each scoreboard element for your broadcast source. Measure them from a frame saved with tools/save_sample_frame.py, then copy this file to roi.json.",
+  "_comment": "Pixel [x, y, width, height] boxes tightly cropping each scoreboard element for your broadcast source. Measure them from a frame saved with tools/save_sample_frame.py, then copy this file to roi.json. down_distance/field_position/possession_*_marker are optional - insights degrade gracefully without them (no first-down/field-position detail, just score/clock-driven insights).",
   "home_score": [40, 20, 60, 40],
   "away_score": [120, 20, 60, 40],
   "clock": [200, 20, 90, 40],
-  "quarter": [300, 20, 50, 40]
+  "quarter": [300, 20, 50, 40],
+  "down_distance": [360, 20, 120, 40],
+  "field_position": [490, 20, 100, 40],
+  "possession_home_marker": [35, 15, 8, 8],
+  "possession_away_marker": [115, 15, 8, 8]
 }

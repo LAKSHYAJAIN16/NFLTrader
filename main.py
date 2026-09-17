@@ -3,8 +3,10 @@
 Modes:
   pregame   Fetch live NFL markets, compare Elo win probs to market prices,
             paper-trade any edge found (default).
-  live      Continuously read game state off a video feed with the CV
-            scoreboard reader and paper-trade a live edge as it develops.
+  live      Watch a broadcast video feed with the CV scoreboard reader and
+            narrate win-probability insights play by play. If --market is
+            given, also compares against Polymarket's live price and
+            paper-trades any edge (still paper-trading only).
   settle    Check cached results for completed games and settle open bets,
             updating Elo ratings from the final scores.
   status    Print the paper portfolio's current bankroll, positions, P&L.
@@ -15,7 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import config
-from src import data_loader, polymarket_client, strategy, win_probability
+from src import data_loader, insights, polymarket_client, strategy, win_probability
 from src.elo import EloRatings
 from src.paper_broker import PaperBroker
 
@@ -67,36 +69,48 @@ def cmd_live(args):
     from src.cv.scoreboard_reader import ScoreboardReader
 
     elo = EloRatings.load()
-    broker = PaperBroker.load()
-    markets = {m["market_id"]: m for m in polymarket_client.get_nfl_markets()}
-    market = markets.get(args.market)
-    if not market:
-        raise SystemExit(f"Market id {args.market} not found among open NFL markets.")
+    if not elo.ratings:
+        data_loader.bootstrap_elo(elo)
+        elo.save()
 
-    pregame_home_prob = elo.expected_home_win_prob(market["home_abbr"], market["away_abbr"])
+    market = None
+    if args.market:
+        markets = {m["market_id"]: m for m in polymarket_client.get_nfl_markets()}
+        market = markets.get(args.market)
+        if not market:
+            raise SystemExit(f"Market id {args.market} not found among open NFL markets.")
+        home_abbr, away_abbr = market["home_abbr"], market["away_abbr"]
+    elif args.home and args.away:
+        home_abbr, away_abbr = args.home.upper(), args.away.upper()
+    else:
+        raise SystemExit("Provide either --market (Polymarket condition id) or both --home/--away.")
+
+    pregame_home_prob = elo.expected_home_win_prob(home_abbr, away_abbr)
+    engine = insights.InsightEngine(pregame_home_prob, home_abbr=home_abbr, away_abbr=away_abbr)
     reader = ScoreboardReader()
+    broker = PaperBroker.load() if market else None
 
-    print(f"Watching {market['question']} via {args.video} ...")
+    print(f"Watching {away_abbr} @ {home_abbr} via {args.video} "
+          f"(pregame model: {home_abbr} {pregame_home_prob:.0%})...")
+
     for state in reader.read_video(args.video, sample_interval_sec=args.interval):
-        live_price = polymarket_client.get_market_price(market["market_id"])
-        market["home_price"] = live_price
-        market["away_price"] = 1 - live_price
+        insight = engine.process(state)
+        if insight:
+            print(f"  [{state.quarter}Q {state.clock_seconds // 60}:{state.clock_seconds % 60:02d}] "
+                  f"{insight.message}")
 
-        model_home_prob = win_probability.live_home_win_prob(
-            pregame_home_prob, state.home_score, state.away_score,
-            state.quarter, state.clock_seconds, state.possession_home,
-        )
-        print(f"  Q{state.quarter} {state.clock_seconds // 60}:{state.clock_seconds % 60:02d}  "
-              f"{market['away_abbr']} {state.away_score} - {state.home_score} {market['home_abbr']}  "
-              f"model_home_wp={model_home_prob:.2f} market_home_price={live_price:.2f}")
+        if market:
+            live_price = polymarket_client.get_market_price(market["market_id"])
+            market["home_price"] = live_price
+            market["away_price"] = 1 - live_price
+            position = strategy.evaluate_market(market, engine.win_prob, broker)
+            if position:
+                print(f"    -> BET {position['side_team']} @ {position['entry_price']:.2f} "
+                      f"stake=${position['stake']:.2f}")
+                broker.save()
 
-        position = strategy.evaluate_market(market, model_home_prob, broker)
-        if position:
-            print(f"  BET {position['side_team']} @ {position['entry_price']:.2f} "
-                  f"stake=${position['stake']:.2f}")
-            broker.save()
-
-    broker.save()
+    if broker:
+        broker.save()
 
 
 def cmd_settle(args):
@@ -153,7 +167,9 @@ def main():
 
     p_live = sub.add_parser("live")
     p_live.add_argument("--video", required=True, help="Video file path or stream URL")
-    p_live.add_argument("--market", required=True, help="Polymarket condition/market id to trade")
+    p_live.add_argument("--market", help="Polymarket condition/market id (optional; enables paper-trading)")
+    p_live.add_argument("--home", help="Home team abbreviation, e.g. KC (if not using --market)")
+    p_live.add_argument("--away", help="Away team abbreviation, e.g. SF (if not using --market)")
     p_live.add_argument("--interval", type=float, default=5.0, help="Seconds between CV reads")
     p_live.set_defaults(func=cmd_live)
 
