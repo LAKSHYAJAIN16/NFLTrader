@@ -1,4 +1,10 @@
 requests>=2.31
+pytest>=8.0
+
+# CV scoreboard OCR mode (--source cv) - optional, only needed off a video feed
 opencv-python>=4.9
 pytesseract>=0.3.10
-pytest>=8.0
+
+# Live play analysis (ball-in-air catch prediction) - optional. Pick one detector:
+ultralytics>=8.2      # zero-setup fallback (generic COCO YOLO, downloads weights on first run)
+inference-sdk>=0.9    # recommended: calls a Roboflow-hosted model fine-tuned on football (needs ROBOFLOW_API_KEY)

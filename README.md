@@ -66,6 +66,34 @@ python tools/demo_play_analysis.py
 Simulates an uncontested catch and a contested one (a defender closing in)
 and prints catch probability frame by frame as each scripted throw arcs in.
 
+### Roboflow detector (recommended over the COCO fallback)
+
+`src/cv/ball_tracker.py`'s generic COCO YOLO wasn't trained on American
+football specifically - its "sports ball" class comes from photos of mostly
+stationary balls across many sports, so recall on a small fast-moving NFL
+football in broadcast motion blur is poor. [Roboflow Universe hosts models
+fine-tuned specifically on American football footage](https://universe.roboflow.com/search?q=class%3Afootball) -
+e.g. Roboflow's own blog demonstrates [RF-DETR + ByteTrack fine-tuned on an
+NFL player dataset](https://blog.roboflow.com/american-football-player-tracker/)
+(74.8% mAP@50, 90.8% precision), and Universe separately lists ball-specific
+and player-specific American football detection models. `src/cv/roboflow_tracker.py`
+is a drop-in alternative to `ball_tracker.py` (same `.detect(frame, frame_idx)`
+interface, both driven by the shared `src/cv/play_watcher.py` loop) that
+calls a Roboflow-hosted model instead of running YOLO locally:
+
+```
+pip install inference-sdk
+export ROBOFLOW_API_KEY=<free key from roboflow.com>
+export ROBOFLOW_BALL_MODEL_ID=<project-slug>/<version>      # from a Universe model's page
+export ROBOFLOW_PLAYER_MODEL_ID=<project-slug>/<version>    # optional, ball-only also works
+```
+
+Pick the actual model id yourself from a Universe listing that matches your
+footage (American football, not soccer - several similarly-named Universe
+projects are soccer) and sanity-check its sample predictions before trusting
+it; this project can't verify class names or detection quality against a
+real broadcast in this environment, same caveat as the COCO path.
+
 ## Optional: news/injury signal
 
 `src/news_signal.py` watches a fixed list of trusted NFL insider accounts
@@ -156,7 +184,9 @@ src/data_loader.py           historical results -> bootstraps Elo
 src/espn_feed.py             free, no-key live game state from ESPN (default live source)
 src/cv/game_state.py         GameState dataclass + sanity checks
 src/cv/scoreboard_reader.py  OpenCV/Tesseract scoreboard OCR (--source cv)
-src/cv/ball_tracker.py       YOLOv8 ball/person detection per frame (feeds trajectory.py)
+src/cv/ball_tracker.py       YOLOv8 ball/person detection per frame (zero-setup fallback)
+src/cv/roboflow_tracker.py   Roboflow-hosted football-specific detection (recommended, needs API key)
+src/cv/play_watcher.py       shared video loop driving either detector into TrajectoryTracker
 src/cv/trajectory.py         projects a thrown ball's landing spot + catch probability
 src/win_probability.py       blends pregame Elo prior with live game state
 src/insights.py              turns a GameState stream into plain-English WP insights
@@ -164,7 +194,7 @@ src/news_signal.py           optional off-field injury/news signal from trusted 
 src/polymarket_client.py     Gamma/CLOB API reads (no auth needed, read-only)
 src/paper_broker.py          simulated bankroll, positions, trade log, P&L
 src/strategy.py              edge detection + Kelly position sizing
-main.py                      CLI: pregame / live / settle / status
+main.py                      CLI: pregame / live / watch-play / settle / status
 tools/demo_insights.py       runs InsightEngine over a scripted sequence, no video needed
 tools/demo_play_analysis.py  runs TrajectoryTracker over a scripted throw, no video/model needed
 tools/save_sample_frame.py   grabs a frame from a video source for ROI calibration
