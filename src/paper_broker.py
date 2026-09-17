@@ -19,8 +19,13 @@ class PaperBroker:
     def has_position(self, market_id):
         return market_id in self.positions
 
-    def place_bet(self, market_id, question, side_team, price, stake, model_prob, market_prob):
-        """side_team: the team abbreviation we're buying YES shares on."""
+    def place_bet(self, market_id, question, side_team, price, stake, model_prob, market_prob, extra=None):
+        """side_team: the team abbreviation (moneyline) or outcome label
+        ("Over", "Yes", ...) we're buying YES shares on. `extra` is an
+        optional dict of additional fields to store on the position - used
+        by evaluate_generic_market to stash the pricing spec + home/away
+        abbrs so cmd_settle can resolve it later without re-deriving it.
+        """
         if price <= 0 or price >= 1:
             return None
         if stake > self.bankroll:
@@ -42,16 +47,28 @@ class PaperBroker:
             "opened_at": time.time(),
             "status": "open",
         }
+        if extra:
+            position.update(extra)
         self.positions[market_id] = position
         self._log_trade(position, event="open")
         return position
 
     def settle_market(self, market_id, winner_abbr):
+        """Moneyline-style settlement: side_team is a team abbreviation,
+        winner_abbr is which team actually won."""
+        position = self.positions.get(market_id)
+        if not position or position["status"] != "open":
+            return None
+        return self.settle_outcome(market_id, won=(position["side_team"] == winner_abbr))
+
+    def settle_outcome(self, market_id, won):
+        """Generic settlement: caller has already determined whether this
+        position's specific outcome (moneyline side, spread cover, total
+        over/under, margin bucket, ...) actually happened."""
         position = self.positions.get(market_id)
         if not position or position["status"] != "open":
             return None
 
-        won = position["side_team"] == winner_abbr
         payout = position["shares"] * 1.0 if won else 0.0
         self.bankroll += payout
         position["status"] = "settled"

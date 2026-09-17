@@ -136,6 +136,51 @@ class ScoringModel:
         raise ValueError(f"unknown pricing spec kind: {kind!r}")
 
 
+def resolve_outcome(spec, home_score, away_score):
+    """Given a market_catalog spec and a game's FINAL score, returns True/False
+    for whether that outcome actually happened, or None if it can't be
+    determined from a final score alone (any half/quarter-period spec - that
+    needs real quarter-by-quarter scoring data this project doesn't have a
+    source for yet, so those positions are left open rather than guessed at).
+    """
+    kind = spec[0]
+    margin = home_score - away_score
+    total = home_score + away_score
+
+    period = spec[-1] if kind in ("win", "cover", "total_over", "total_under",
+                                   "team_total_over", "team_total_under") else "full"
+    if period != "full":
+        return None
+
+    if kind == "win":
+        _, side, _period = spec
+        team_margin = margin if side == "home" else -margin
+        return team_margin > 0
+
+    if kind == "cover":
+        _, side, line, _period = spec
+        team_margin = margin if side == "home" else -margin
+        return team_margin > -line
+
+    if kind in ("total_over", "total_under"):
+        _, line, _period = spec
+        return (total > line) if kind == "total_over" else (total < line)
+
+    if kind in ("team_total_over", "team_total_under"):
+        _, side, line, _period = spec
+        team_score = home_score if side == "home" else away_score
+        return (team_score > line) if kind == "team_total_over" else (team_score < line)
+
+    if kind in ("margin_bucket", "margin_bucket_no"):
+        _, side, low, high = spec
+        team_margin = margin if side == "home" else -margin
+        in_range = (low is None or team_margin >= low) and (high is None or team_margin <= high)
+        hit = in_range and (team_margin > 0 or (low, high) == (0, 0))
+        return hit if kind == "margin_bucket" else not hit
+
+    return None
+
+
 def _team_margin(dist: ScoreDistribution, side: str):
     """(mean, std) of that side's own signed margin (positive = winning)."""
     mean = dist.mean_margin if side == "home" else -dist.mean_margin

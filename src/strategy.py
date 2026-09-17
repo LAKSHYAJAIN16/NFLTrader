@@ -56,3 +56,53 @@ def evaluate_market(market, model_home_prob, broker):
         model_prob=model_prob,
         market_prob=market_prob,
     )
+
+
+def evaluate_generic_market(raw_market, home_abbr, away_abbr, home_alias, away_alias, model, broker):
+    """Prices every outcome of any tradable market family (moneyline, spread,
+    total, team total, exact margin - see src/market_catalog.py) and paper-
+    trades whichever outcome is mispriced enough, same Kelly sizing as
+    evaluate_market(). Returns (opened_position_or_None, was_tradable: bool)
+    - was_tradable distinguishes "priced but no edge" from "we have no model
+    for this market type at all", so callers can log tracked-only markets
+    separately without conflating them.
+    """
+    from src import market_catalog
+
+    specs = market_catalog.parse_market(
+        raw_market["sports_market_type"], raw_market["question"], raw_market.get("group_item_title"),
+        raw_market["outcomes"], home_alias, away_alias,
+    )
+    if specs is None:
+        return None, False
+
+    if broker.has_position(raw_market["market_id"]):
+        return None, True
+
+    best = None  # (edge, outcome_name, spec, price, model_prob)
+    for (outcome_name, spec), price in zip(specs, raw_market["prices"]):
+        model_prob = model.price(spec, home_abbr, away_abbr)
+        edge = model_prob - price
+        if edge >= config.EDGE_THRESHOLD and (best is None or edge > best[0]):
+            best = (edge, outcome_name, spec, price, model_prob)
+
+    if best is None:
+        return None, True
+
+    _, outcome_name, spec, price, model_prob = best
+    stake = kelly_stake(model_prob, price, broker.bankroll)
+    if stake <= 1.0:
+        return None, True
+
+    position = broker.place_bet(
+        market_id=raw_market["market_id"],
+        question=raw_market["question"],
+        side_team=outcome_name,
+        price=price,
+        stake=stake,
+        model_prob=model_prob,
+        market_prob=price,
+        extra={"spec": list(spec), "home_abbr": home_abbr, "away_abbr": away_abbr,
+               "sports_market_type": raw_market["sports_market_type"]},
+    )
+    return position, True
