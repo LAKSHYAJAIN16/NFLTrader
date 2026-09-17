@@ -31,6 +31,12 @@ WP_POSSESSION_BONUS = 0.03  # extra win prob credited to the team with the ball
 WP_FIELD_POSITION_MAX = 0.08  # max extra win prob for having the ball at the goal line
 INSIGHT_MIN_DELTA = 0.02      # smallest win-prob swing worth surfacing as an insight
 
+# --- Live play analysis (ball-in-air catch prediction) ---
+BALL_AIRBORNE_VELOCITY_PX = 8.0     # min per-frame vertical pixel movement to call the ball "thrown"
+CATCH_CONTEST_RADIUS_PX = 60.0      # a person within this many px of the projected landing spot contests it
+CATCH_PROB_UNCONTESTED = 0.85       # catch probability when nobody is near the projected landing spot
+CATCH_PROB_SWING = 0.55             # how much a fully-contested catch (someone right on top of it) cuts that
+
 # --- Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(BASE_DIR, "state")
