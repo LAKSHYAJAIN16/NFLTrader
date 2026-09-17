@@ -196,7 +196,10 @@ def cmd_watch_play(args):
     from src.cv.play_watcher import watch_video
     from src.cv.trajectory import TrajectoryTracker
 
-    detector = _pick_play_detector(args)
+    try:
+        detector = _pick_play_detector(args)
+    except RuntimeError as e:
+        raise SystemExit(str(e))
     tracker = TrajectoryTracker()
 
     print(f"Watching {args.video} for live catch-probability predictions...")
