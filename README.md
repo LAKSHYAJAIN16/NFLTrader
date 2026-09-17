@@ -12,6 +12,8 @@ I wanted to see if I could turn live NFL games into a real-time win-probability 
 - `src/cv/trajectory.py` fits a thrown ball's arc to project landing spot + catch probability, fed by `src/cv/ball_tracker.py` (generic YOLOv8, unproven on real broadcast video) or `src/cv/roboflow_tracker.py` (football-specific model, needs a Roboflow key)
 - `src/news_signal.py` optionally watches trusted NFL insiders on X for injury/inactive news (needs `X_BEARER_TOKEN`, no-ops without one)
 - `src/polymarket_client.py` + `src/strategy.py` + `src/paper_broker.py` read Polymarket odds, size a fractional-Kelly bet against any edge, and track a simulated bankroll
+- `src/scoring_model.py` fits a margin/total point distribution from Elo, calibrated against real nflverse history -- prices spreads, totals, team totals, and exact-margin buckets, not just the moneyline
+- `src/market_catalog.py` turns any market's own type/text into a pricing spec generically (no per-game hardcoding); anything without a calibrated model (player props, offensive yards, TD counts, safety, 2pt conversions) is tracked, never traded
 
 Try the insight and trajectory logic with zero network or video:
 ```
@@ -37,7 +39,9 @@ export ROBOFLOW_BALL_MODEL_ID=<project-slug>/<version>
 
 ## Running it
 ```
-python main.py pregame                     # scan the coming week's markets, paper-trade any Elo edge
+python main.py pregame                     # scan the coming week's moneylines, paper-trade any Elo edge
+python main.py trade-game <polymarket_game_url_or_slug>   # EVERY market for one game -- spreads, totals,
+                                            # team totals, exact margin, all half/quarter breakdowns too
 python main.py status                      # bankroll, open positions, realized P&L
 python main.py settle                      # settle bets against completed games, update Elo
 
@@ -45,6 +49,14 @@ python main.py live --home KC --away SF
 python main.py live --market <polymarket_condition_id>                       # teams inferred from the market
 python main.py live --source cv --video <path_or_url> --home KC --away SF    # CV/OCR instead of ESPN
 ```
+
+`trade-game` takes a full `https://polymarket.com/sports/nfl/nfl-det-buf-2026-09-18` URL or the bare
+slug. It logs *every* market it finds to `state/market_catalog.csv` (tradable or not, deduped across
+runs) and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) -- a
+$0-volume quote is a seeded default price, not a real market consensus, so there's no real edge to
+find against one. Individual player-prop markets (e.g. "Josh Allen 2+ Touchdowns") aren't in this list:
+they're rendered straight into Polymarket's page HTML rather than served from the public API, so
+they're not reachable without scraping something undocumented -- not done here.
 
 ## Layout
 ```
@@ -55,17 +67,28 @@ src/insights.py              GameState stream -> plain-English WP narration
 src/cv/                      scoreboard OCR, ball tracking, trajectory projection
 src/news_signal.py           off-field injury/news signal from trusted X accounts
 src/polymarket_client.py     Polymarket Gamma/CLOB reads (read-only, no auth)
+src/scoring_model.py         calibrated margin/total distribution -- prices every market family
+src/market_catalog.py        generic market-type -> pricing-spec registry and text parsers
+src/market_log.py            appends every discovered market to state/market_catalog.csv
 src/strategy.py              edge detection + Kelly position sizing
 src/paper_broker.py          simulated bankroll, positions, trade log, P&L
-main.py                      CLI: pregame / live / watch-play / settle / status
+main.py                      CLI: pregame / trade-game / live / watch-play / settle / status
 ```
-State (Elo ratings, portfolio, trade log) lives in gitignored flat JSON/CSV under `state/` -- no database.
+State (Elo ratings, portfolio, trade log, market catalog) lives in gitignored flat JSON/CSV under
+`state/` -- no database.
 
 ## Tests
 ```
 pytest
 ```
 All offline -- no network calls, no API keys, no real video or model downloads.
+
+## A real limitation: half/quarter settlement
+
+`settle` can resolve any full-game position (moneyline, spread, total, team total, exact margin) from
+a final score. It can't resolve half/quarter positions the same way -- that needs real quarter-by-quarter
+scoring data, which nflverse's basic results file doesn't carry. Those positions are correctly left open
+rather than guessed at; adding a play-by-play data source would close this gap.
 
 ## Not here: placing real bets
 This stops short of real order placement on purpose. Polymarket's `py-clob-client` handles wallet auth and order signing if I ever wanted to extend it, but I'd want to backtest the Elo edge against historical closing lines and validate the CV/OCR pipeline against real broadcast footage first.
