@@ -18,6 +18,9 @@ EDGE_THRESHOLD = 0.05       # min |model_prob - market_prob| to consider a bet
 KELLY_FRACTION = 0.25       # fraction of full Kelly stake actually risked
 MAX_STAKE_PCT = 0.05        # never risk more than 5% of bankroll on one bet
 STARTING_BANKROLL = 1000.0
+MIN_MARKET_VOLUME = 500.0   # skip trading a market with less than this much lifetime
+                             # volume - a $0-volume quote is a seeded default price,
+                             # not a real market consensus, so "edge" against it isn't real
 MARKET_LOOKAHEAD_DAYS = 8   # only evaluate games starting within this window -
                              # lines for games many weeks out move a lot before
                              # kickoff, so committing capital to them this early
@@ -44,6 +47,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 ELO_RATINGS_PATH = os.path.join(STATE_DIR, "elo_ratings.json")
 PORTFOLIO_PATH = os.path.join(STATE_DIR, "portfolio.json")
 TRADE_LOG_PATH = os.path.join(STATE_DIR, "trade_log.csv")
+MARKET_CATALOG_PATH = os.path.join(STATE_DIR, "market_catalog.csv")
 GAMES_CSV_PATH = os.path.join(DATA_DIR, "games.csv")
 ROI_CONFIG_PATH = os.path.join(DATA_DIR, "roi.json")
 

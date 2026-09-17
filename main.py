@@ -3,7 +3,12 @@ play-level insights; optionally paper-trades any edge against Polymarket.
 
 Modes:
   pregame    Fetch live NFL markets, compare Elo win probs to market prices,
-             paper-trade any edge found.
+             paper-trade any edge found (moneylines only, across the week).
+  trade-game Fetch EVERY market for ONE game (from its Polymarket URL/slug)
+             - moneyline, spreads, totals, team totals, exact margin, and
+             their half/quarter breakdowns - and paper-trade any edge across
+             all of them, not just the moneyline. Logs the full market
+             catalog (tradable or not) to state/market_catalog.csv.
   live       Narrate win-probability insights play by play from a live game
              state source (--source espn, the default, or cv for OCR off a
              video feed). If --market is given, also compares against
@@ -20,7 +25,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import config
-from src import data_loader, espn_feed, insights, polymarket_client, strategy, win_probability
+from src import data_loader, espn_feed, insights, market_log, polymarket_client, strategy, win_probability
 from src.elo import EloRatings
 from src.paper_broker import PaperBroker
 
@@ -66,6 +71,51 @@ def cmd_pregame(args):
 
     broker.save()
     print(f"Placed {trades} paper trade(s). Bankroll: ${broker.bankroll:.2f}")
+
+
+def cmd_trade_game(args):
+    from src import scoring_model as sm
+
+    print("Calibrating scoring model from historical results...")
+    elo, calibration = sm.calibrate()
+    model = sm.ScoringModel(elo, calibration)
+    broker = PaperBroker.load()
+
+    slug = polymarket_client.parse_event_slug(args.slug_or_url)
+    home, away, markets = polymarket_client.get_event_markets(args.slug_or_url)
+    print(f"{away['name']} @ {home['name']} ({slug}): {len(markets)} markets found.")
+
+    tradable_ids = set()
+    tracked_types = set()
+    illiquid_skipped = 0
+    trades = 0
+    for m in markets:
+        if m["closed"] or not m["active"]:
+            continue
+        if m["volume"] < config.MIN_MARKET_VOLUME:
+            illiquid_skipped += 1
+            continue
+        position, tradable = strategy.evaluate_generic_market(
+            m, home["abbr"], away["abbr"], home["alias"], away["alias"], model, broker)
+        if tradable:
+            tradable_ids.add(m["market_id"])
+        else:
+            tracked_types.add(m["sports_market_type"])
+        if position:
+            trades += 1
+            print(f"  BET {position['side_team']!r:>12} @ {position['entry_price']:.2f} "
+                  f"stake=${position['stake']:.2f}  ({m['question']})")
+
+    logged = market_log.log_markets(slug, home["abbr"], away["abbr"], markets, tradable_ids)
+    broker.save()
+
+    print(f"Placed {trades} paper trade(s) across {len(tradable_ids)} tradable, liquid markets.")
+    print(f"Skipped {illiquid_skipped} market(s) below ${config.MIN_MARKET_VOLUME:.0f} lifetime "
+          f"volume (still logged, just not traded - a $0-volume price is a seeded default, not a real quote).")
+    if tracked_types:
+        print(f"Tracked but not traded (no calibrated model for these types): {', '.join(sorted(tracked_types))}")
+    print(f"{logged} new market(s) logged to {config.MARKET_CATALOG_PATH}")
+    print(f"Bankroll: ${broker.bankroll:.2f}")
 
 
 def _game_state_stream(args, home_abbr, away_abbr):
@@ -213,6 +263,11 @@ def main():
     sub = parser.add_subparsers(dest="mode", required=True)
 
     sub.add_parser("pregame").set_defaults(func=cmd_pregame)
+
+    p_trade_game = sub.add_parser("trade-game")
+    p_trade_game.add_argument("slug_or_url",
+                               help="Polymarket game URL (e.g. https://polymarket.com/sports/nfl/nfl-det-buf-2026-09-18) or bare event slug")
+    p_trade_game.set_defaults(func=cmd_trade_game)
 
     p_live = sub.add_parser("live")
     p_live.add_argument("--source", choices=["espn", "cv"], default="espn",

@@ -157,6 +157,7 @@ def get_event_markets(slug_or_url):
             "sports_market_type": m.get("sportsMarketType"),
             "outcomes": outcomes,
             "prices": [float(p) for p in prices],
+            "volume": float(m.get("volumeNum") or 0.0),
             "closed": m.get("closed", False),
             "active": m.get("active", True),
         })
