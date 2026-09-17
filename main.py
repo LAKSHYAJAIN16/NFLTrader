@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import config
-from src import data_loader, insights, polymarket_client, strategy, win_probability
+from src import data_loader, espn_feed, insights, polymarket_client, strategy, win_probability
 from src.elo import EloRatings
 from src.paper_broker import PaperBroker
 
@@ -65,9 +65,28 @@ def cmd_pregame(args):
     print(f"Placed {trades} paper trade(s). Bankroll: ${broker.bankroll:.2f}")
 
 
-def cmd_live(args):
-    from src.cv.scoreboard_reader import ScoreboardReader
+def _game_state_stream(args, home_abbr, away_abbr):
+    """Yields GameStates from whichever source was requested. `espn` (default)
+    is free, needs no calibration, and updates within seconds of a play - use
+    `cv` only when you specifically need to watch a video source ESPN doesn't
+    cover (see README for the tradeoffs)."""
+    if args.source == "espn":
+        event_id = args.event or espn_feed.find_event_id(home_abbr, away_abbr)
+        if not event_id:
+            raise SystemExit(f"No {away_abbr} @ {home_abbr} game found on ESPN's current "
+                              f"scoreboard. Pass --event <espn_event_id> explicitly if it's "
+                              f"outside the current week, or use --source cv with --video.")
+        print(f"Polling ESPN event {event_id} every {args.interval:.0f}s ...")
+        yield from espn_feed.watch(event_id, home_abbr, away_abbr, poll_interval_sec=args.interval)
+    else:
+        from src.cv.scoreboard_reader import ScoreboardReader
+        if not args.video:
+            raise SystemExit("--source cv requires --video <path_or_url>.")
+        print(f"Reading scoreboard from {args.video} every {args.interval:.0f}s ...")
+        yield from ScoreboardReader().read_video(args.video, sample_interval_sec=args.interval)
 
+
+def cmd_live(args):
     elo = EloRatings.load()
     if not elo.ratings:
         data_loader.bootstrap_elo(elo)
@@ -87,13 +106,11 @@ def cmd_live(args):
 
     pregame_home_prob = elo.expected_home_win_prob(home_abbr, away_abbr)
     engine = insights.InsightEngine(pregame_home_prob, home_abbr=home_abbr, away_abbr=away_abbr)
-    reader = ScoreboardReader()
     broker = PaperBroker.load() if market else None
 
-    print(f"Watching {away_abbr} @ {home_abbr} via {args.video} "
-          f"(pregame model: {home_abbr} {pregame_home_prob:.0%})...")
+    print(f"Watching {away_abbr} @ {home_abbr} (pregame model: {home_abbr} {pregame_home_prob:.0%})...")
 
-    for state in reader.read_video(args.video, sample_interval_sec=args.interval):
+    for state in _game_state_stream(args, home_abbr, away_abbr):
         insight = engine.process(state)
         if insight:
             print(f"  [{state.quarter}Q {state.clock_seconds // 60}:{state.clock_seconds % 60:02d}] "
@@ -166,11 +183,15 @@ def main():
     sub.add_parser("pregame").set_defaults(func=cmd_pregame)
 
     p_live = sub.add_parser("live")
-    p_live.add_argument("--video", required=True, help="Video file path or stream URL")
+    p_live.add_argument("--source", choices=["espn", "cv"], default="espn",
+                         help="espn (default): free live-feed polling, low latency, no calibration. "
+                              "cv: OCR a broadcast video feed instead (needs --video + ROI calibration).")
+    p_live.add_argument("--video", help="Video file path or stream URL (required for --source cv)")
+    p_live.add_argument("--event", help="ESPN event id (optional; auto-looked-up from --home/--away otherwise)")
     p_live.add_argument("--market", help="Polymarket condition/market id (optional; enables paper-trading)")
     p_live.add_argument("--home", help="Home team abbreviation, e.g. KC (if not using --market)")
     p_live.add_argument("--away", help="Away team abbreviation, e.g. SF (if not using --market)")
-    p_live.add_argument("--interval", type=float, default=5.0, help="Seconds between CV reads")
+    p_live.add_argument("--interval", type=float, default=5.0, help="Seconds between reads/polls")
     p_live.set_defaults(func=cmd_live)
 
     p_settle = sub.add_parser("settle")
