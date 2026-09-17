@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+state/*.json
+state/*.csv
+data/games.csv
+data/roi.json
+*.png
+!data/roi.json.example

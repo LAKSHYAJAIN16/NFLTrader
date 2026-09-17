@@ -1,0 +1,126 @@
+"""Read-only client for Polymarket's public Gamma and CLOB APIs.
+
+No API key or wallet is required for market data - only order placement
+(not implemented here; this project runs in paper-trading mode) needs auth.
+"""
+
+import json
+
+import requests
+
+import config
+
+_nfl_tag_id_cache = None
+
+
+def _get_nfl_tag_id():
+    global _nfl_tag_id_cache
+    if _nfl_tag_id_cache is None:
+        resp = requests.get(f"{config.GAMMA_API}/tags/slug/{config.NFL_TAG_SLUG}", timeout=15)
+        resp.raise_for_status()
+        _nfl_tag_id_cache = resp.json()["id"]
+    return _nfl_tag_id_cache
+
+
+def _fetch_nfl_events(closed=False, max_pages=10):
+    """Individual-game moneyline events carry a `teams` array with explicit
+    home/away `ordering` - far more reliable than parsing team names out of
+    a title/slug, so we page through /events rather than /markets directly.
+    """
+    tag_id = _get_nfl_tag_id()
+    events = []
+    offset = 0
+    for _ in range(max_pages):
+        params = {"tag_id": tag_id, "closed": str(closed).lower(), "limit": 100, "offset": offset}
+        resp = requests.get(f"{config.GAMMA_API}/events", params=params, timeout=15)
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        events.extend(batch)
+        offset += 100
+        if len(batch) < 100:
+            break
+    return events
+
+
+def _team_abbr(team):
+    name = (team.get("name") or "").strip().lower()
+    if name in config.TEAM_NAME_TO_ABBR:
+        return config.TEAM_NAME_TO_ABBR[name]
+    raw = team.get("abbreviation")
+    return raw.upper() if raw else None
+
+
+def get_nfl_markets(active_only=True):
+    """Return NFL moneyline markets as a list of dicts.
+
+    Each dict: {market_id, question, home_team, away_team, home_abbr, away_abbr,
+    home_price, away_price, game_start, closed}
+    """
+    events = _fetch_nfl_events(closed=not active_only)
+    markets = []
+
+    for event in events:
+        teams = event.get("teams")
+        if not teams or len(teams) != 2:
+            continue
+        home = next((t for t in teams if t.get("ordering") == "home"), None)
+        away = next((t for t in teams if t.get("ordering") == "away"), None)
+        if not home or not away:
+            continue
+
+        home_abbr = _team_abbr(home)
+        away_abbr = _team_abbr(away)
+        if not home_abbr or not away_abbr:
+            continue
+
+        for m in event.get("markets", []):
+            if m.get("sportsMarketType") != "moneyline":
+                continue  # skip spreads/totals/props sub-markets in the same event
+            if active_only and (m.get("closed") or not m.get("active", True)):
+                continue
+
+            outcomes = _parse_json_field(m.get("outcomes"))
+            prices = _parse_json_field(m.get("outcomePrices"))
+            if not outcomes or not prices or len(outcomes) != 2:
+                continue
+
+            price_by_alias = dict(zip(outcomes, (float(p) for p in prices)))
+            home_price = price_by_alias.get(home.get("alias"))
+            away_price = price_by_alias.get(away.get("alias"))
+            if home_price is None or away_price is None:
+                continue
+
+            markets.append({
+                "market_id": m.get("conditionId") or m.get("id"),
+                "question": m.get("question", ""),
+                "home_team": home.get("name"),
+                "away_team": away.get("name"),
+                "home_abbr": home_abbr,
+                "away_abbr": away_abbr,
+                "home_price": home_price,
+                "away_price": away_price,
+                "game_start": m.get("gameStartTime") or event.get("startDate"),
+                "closed": m.get("closed", False),
+            })
+
+    return markets
+
+
+def get_market_price(condition_id):
+    """Fetch the live midpoint price for a single market from the CLOB API."""
+    resp = requests.get(f"{config.CLOB_API}/midpoint", params={"token_id": condition_id}, timeout=10)
+    resp.raise_for_status()
+    return float(resp.json()["mid"])
+
+
+def _parse_json_field(value):
+    if value is None:
+        return None
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return None

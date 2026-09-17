@@ -1,0 +1,4 @@
+requests>=2.31
+opencv-python>=4.9
+pytesseract>=0.3.10
+pytest>=8.0
