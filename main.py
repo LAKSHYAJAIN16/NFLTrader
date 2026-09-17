@@ -1,15 +1,18 @@
-"""NFLTrader CLI - a paper-trading bot for Polymarket NFL moneyline markets.
+"""NFLTrader CLI - watches NFL games live and narrates win-probability and
+play-level insights; optionally paper-trades any edge against Polymarket.
 
 Modes:
-  pregame   Fetch live NFL markets, compare Elo win probs to market prices,
-            paper-trade any edge found (default).
-  live      Watch a broadcast video feed with the CV scoreboard reader and
-            narrate win-probability insights play by play. If --market is
-            given, also compares against Polymarket's live price and
-            paper-trades any edge (still paper-trading only).
-  settle    Check cached results for completed games and settle open bets,
-            updating Elo ratings from the final scores.
-  status    Print the paper portfolio's current bankroll, positions, P&L.
+  pregame    Fetch live NFL markets, compare Elo win probs to market prices,
+             paper-trade any edge found.
+  live       Narrate win-probability insights play by play from a live game
+             state source (--source espn, the default, or cv for OCR off a
+             video feed). If --market is given, also compares against
+             Polymarket's live price and paper-trades any edge.
+  watch-play Narrate ball-in-air catch probability, frame by frame, off a
+             video feed (needs a real-time object detector - see README).
+  settle     Check cached results for completed games and settle open bets,
+             updating Elo ratings from the final scores.
+  status     Print the paper portfolio's current bankroll, positions, P&L.
 """
 
 import argparse
@@ -176,6 +179,32 @@ def cmd_status(args):
     print(f"Realized P&L:    ${s['realized_pnl']:.2f}  ({s['roi_pct']:+.1f}% of starting bankroll)")
 
 
+def _pick_play_detector(args):
+    from src.cv import roboflow_tracker
+
+    if args.detector == "roboflow" or (args.detector == "auto" and roboflow_tracker.is_configured()):
+        print("Using Roboflow detector...")
+        return roboflow_tracker.RoboflowTracker()
+
+    from src.cv.ball_tracker import BallTracker
+    print("Using generic COCO YOLO detector (set ROBOFLOW_API_KEY + "
+          "ROBOFLOW_*_MODEL_ID for the fine-tuned option - see README)...")
+    return BallTracker()
+
+
+def cmd_watch_play(args):
+    from src.cv.play_watcher import watch_video
+    from src.cv.trajectory import TrajectoryTracker
+
+    detector = _pick_play_detector(args)
+    tracker = TrajectoryTracker()
+
+    print(f"Watching {args.video} for live catch-probability predictions...")
+    for prediction in watch_video(args.video, detector, tracker,
+                                   sample_every_n_frames=args.sample_every):
+        print(f"  frame {prediction.frame_idx}: {prediction.message}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -199,6 +228,14 @@ def main():
     p_settle.set_defaults(func=cmd_settle)
 
     sub.add_parser("status").set_defaults(func=cmd_status)
+
+    p_watch = sub.add_parser("watch-play")
+    p_watch.add_argument("--video", required=True, help="Video file path or stream URL")
+    p_watch.add_argument("--detector", choices=["auto", "roboflow", "coco"], default="auto",
+                          help="auto (default): Roboflow if ROBOFLOW_API_KEY is set, else COCO YOLO.")
+    p_watch.add_argument("--sample-every", type=int, default=1,
+                          help="Only run detection on every Nth frame (trade resolution for speed)")
+    p_watch.set_defaults(func=cmd_watch_play)
 
     args = parser.parse_args()
     args.func(args)
