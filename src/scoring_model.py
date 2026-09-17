@@ -101,6 +101,40 @@ class ScoringModel:
             std_total=full.std_total * math.sqrt(fraction),
         )
 
+    def price(self, spec, home_abbr, away_abbr) -> float:
+        """Prices any (kind, ...) spec produced by src/market_catalog.py."""
+        kind = spec[0]
+
+        if kind == "win":
+            _, side, period = spec
+            dist = self.period(home_abbr, away_abbr, period)
+            p = home_win_prob(dist)
+            return p if side == "home" else 1.0 - p
+
+        if kind == "cover":
+            _, side, line, period = spec
+            dist = self.period(home_abbr, away_abbr, period)
+            return spread_cover_prob(dist, side, line)
+
+        if kind in ("total_over", "total_under"):
+            _, line, period = spec
+            dist = self.period(home_abbr, away_abbr, period)
+            return total_over_prob(dist, line) if kind == "total_over" else total_under_prob(dist, line)
+
+        if kind in ("team_total_over", "team_total_under"):
+            _, side, line, period = spec
+            dist = self.period(home_abbr, away_abbr, period)
+            return (team_total_over_prob(dist, side, line) if kind == "team_total_over"
+                    else team_total_under_prob(dist, side, line))
+
+        if kind in ("margin_bucket", "margin_bucket_no"):
+            _, side, low, high = spec
+            dist = self.full_game(home_abbr, away_abbr)
+            p = margin_bucket_prob(dist, side, low, high)
+            return p if kind == "margin_bucket" else 1.0 - p
+
+        raise ValueError(f"unknown pricing spec kind: {kind!r}")
+
 
 def _team_margin(dist: ScoreDistribution, side: str):
     """(mean, std) of that side's own signed margin (positive = winning)."""
