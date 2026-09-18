@@ -5,6 +5,7 @@ venv/
 
 state/*.json
 state/*.csv
+state/market_dumps/
 data/games.csv
 data/roi.json
 *.png
