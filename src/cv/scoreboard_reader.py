@@ -142,6 +142,29 @@ class ScoreboardReader:
         finally:
             cap.release()
 
+    def read_browser(self, url, sample_interval_sec=5.0, headless=True):
+        """Same as read_video, but the source is a live webpage rather than a
+        direct video file/URL - see src/cv/browser_capture.py."""
+        import time
+
+        from src.cv.browser_capture import BrowserCapture
+
+        capture = BrowserCapture(url, headless=headless).start()
+        prev_state = None
+        last_read = 0.0
+        try:
+            for frame in capture.frames():
+                now = time.monotonic()
+                if now - last_read < sample_interval_sec:
+                    continue
+                last_read = now
+                state = self.read_frame(frame, timestamp=now)
+                if state.is_plausible(prev_state):
+                    prev_state = state
+                    yield state
+        finally:
+            capture.stop()
+
     @staticmethod
     def _parse_int(text):
         digits = re.sub(r"\D", "", text)

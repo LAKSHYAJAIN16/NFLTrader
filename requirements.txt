@@ -10,3 +10,8 @@ ultralytics>=8.2       # zero-setup fallback (generic COCO YOLO, downloads weigh
 inference-sdk>=0.9     # recommended: calls a Roboflow-hosted model fine-tuned on football (needs ROBOFLOW_API_KEY)
 transformers>=4.44     # no-API-key alternative: local zero-shot Grounding DINO (--detector huggingface)
 torch>=2.3              # ^ needed by transformers for local inference; large install, GPU strongly preferred
+
+# Comprehensive live data gathering - optional, pick what you need:
+playwright>=1.47        # browser capture: turns any website into CV-readable frames (then: playwright install chromium)
+faster-whisper>=1.0     # radio transcription: local speech-to-text, no API key needed
+av>=13.0                 # ^ decodes radio/audio stream URLs for faster-whisper
