@@ -2,18 +2,10 @@
 
 > Real-time NFL win-probability feed, checked against what Polymarket thinks -- no real money, ever.
 
-I wanted to see if I could turn live NFL games into a real-time win-probability feed and check whether it ever disagrees with Polymarket's price. It watches a game live (free ESPN feed by default, or OpenCV/OCR reading a broadcast scoreboard), narrates why win probability is swinging, and optionally paper-trades any edge against Polymarket. Every "bet" is a simulated position tracked locally -- no wallet, no real money touches this anywhere.
+No real money touches this anywhere. NFLTrader watches a game live (free ESPN feed by default, or OpenCV/OCR reading a broadcast scoreboard), turns score/clock/possession into a real-time win-probability feed blended with a pregame Elo prior, narrates why the number is swinging, and optionally paper-trades any edge it finds against Polymarket's price. Every "bet" is a simulated position tracked locally -- no wallet involved.
 
 ## How it works
-- `src/espn_feed.py` polls ESPN's free scoreboard API every few seconds (default source, no key needed)
-- `src/cv/scoreboard_reader.py` reads a scoreboard off video via OpenCV/Tesseract instead (`--source cv`), needs a calibrated region-of-interest per broadcast
-- `src/win_probability.py` blends a pregame Elo prior (`src/elo.py`, bootstrapped from nflverse history) with score, clock, possession, and field position
-- `src/insights.py` turns win-probability swings into plain-English narration (touchdown, turnover, etc.), filtered by `INSIGHT_MIN_DELTA` so it's not spamming
-- `src/cv/trajectory.py` fits a thrown ball's arc to project landing spot + catch probability, fed by one of three interchangeable detectors: `src/cv/ball_tracker.py` (generic YOLOv8, no setup, unproven on real broadcast video), `src/cv/roboflow_tracker.py` (football-specific model, needs a Roboflow key), or `src/cv/huggingface_tracker.py` (local zero-shot Grounding DINO, no API key but a heavy `transformers`+`torch` install)
-- `src/news_signal.py` optionally watches trusted NFL insiders on X for injury/inactive news (needs `X_BEARER_TOKEN`, no-ops without one)
-- `src/polymarket_client.py` + `src/strategy.py` + `src/paper_broker.py` read Polymarket odds, size a fractional-Kelly bet against any edge, and track a simulated bankroll
-- `src/scoring_model.py` fits a margin/total point distribution from Elo, calibrated against real nflverse history -- prices spreads, totals, team totals, and exact-margin buckets, not just the moneyline
-- `src/market_catalog.py` turns any market's own type/text into a pricing spec generically (no per-game hardcoding); anything without a calibrated model (player props, offensive yards, TD counts, safety, 2pt conversions) is tracked, never traded
+The live feed (ESPN by default, or `--source cv` for OpenCV/Tesseract scoreboard reading off video) drives a win-probability model built on an Elo prior bootstrapped from nflverse history. Swings get turned into plain-English narration, filtered so it's not spamming. Thrown-ball trajectory projection is optional and pluggable across three detectors (YOLOv8, Roboflow, or a local zero-shot Hugging Face model), and an optional X-based news signal watches trusted NFL insiders for injury news. On the trading side, a calibrated margin/total model prices spreads, totals, team totals, and exact-margin buckets against Polymarket odds, sizes a fractional-Kelly position, and tracks a simulated bankroll. See `src/` for the module breakdown below.
 
 Try the insight and trajectory logic with zero network or video:
 ```
@@ -36,14 +28,11 @@ pip install inference-sdk
 export ROBOFLOW_API_KEY=<free key from roboflow.com>
 export ROBOFLOW_BALL_MODEL_ID=<project-slug>/<version>
 ```
-For the local Hugging Face detector (`--detector huggingface`) -- no account or API key needed at
-all, unlike the other two, but a heavy install and download:
+For the local Hugging Face detector (`--detector huggingface`) -- no account or key needed, but a heavy install and download:
 ```
 pip install transformers torch
 ```
-(Correction on something claimed earlier in this project: Hugging Face's *hosted* inference API was
-assumed to allow free anonymous access. Tested directly -- it now 401s without a token, same as
-Roboflow. Running the model locally is the actual zero-credential option.)
+Hugging Face's *hosted* inference API now 401s without a token, same as Roboflow, so running the model locally is the actual zero-credential option.
 
 ## Running it
 ```
@@ -58,13 +47,7 @@ python main.py live --market <polymarket_condition_id>                       # t
 python main.py live --source cv --video <path_or_url> --home KC --away SF    # CV/OCR instead of ESPN
 ```
 
-`trade-game` takes a full `https://polymarket.com/sports/nfl/nfl-det-buf-2026-09-18` URL or the bare
-slug. It logs *every* market it finds to `state/market_catalog.csv` (tradable or not, deduped across
-runs) and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) -- a
-$0-volume quote is a seeded default price, not a real market consensus, so there's no real edge to
-find against one. Individual player-prop markets (e.g. "Josh Allen 2+ Touchdowns") aren't in this list:
-they're rendered straight into Polymarket's page HTML rather than served from the public API, so
-they're not reachable without scraping something undocumented -- not done here.
+`trade-game` takes a full Polymarket URL or bare slug, logs every market it finds to `state/market_catalog.csv`, and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) since a $0-volume quote is a seeded default, not a real consensus. Player-prop markets aren't included -- they're rendered into Polymarket's page HTML rather than served from the public API.
 
 ## Layout
 ```
@@ -91,12 +74,5 @@ pytest
 ```
 All offline -- no network calls, no API keys, no real video or model downloads.
 
-## A real limitation: half/quarter settlement
-
-`settle` can resolve any full-game position (moneyline, spread, total, team total, exact margin) from
-a final score. It can't resolve half/quarter positions the same way -- that needs real quarter-by-quarter
-scoring data, which nflverse's basic results file doesn't carry. Those positions are correctly left open
-rather than guessed at; adding a play-by-play data source would close this gap.
-
-## Not here: placing real bets
-This stops short of real order placement on purpose. Polymarket's `py-clob-client` handles wallet auth and order signing if I ever wanted to extend it, but I'd want to backtest the Elo edge against historical closing lines and validate the CV/OCR pipeline against real broadcast footage first.
+## Known gaps
+`settle` resolves full-game positions from a final score but leaves half/quarter positions open rather than guessing -- that needs quarter-by-quarter data nflverse's basic results file doesn't carry. And real order placement is out of scope on purpose: Polymarket's `py-clob-client` handles wallet auth and signing if this ever gets extended that far, but the Elo edge needs backtesting against historical closing lines first, and the CV/OCR pipeline against real broadcast footage.
