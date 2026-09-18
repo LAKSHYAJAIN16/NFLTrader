@@ -15,6 +15,10 @@ Modes:
              Polymarket's live price and paper-trades any edge.
   watch-play Narrate ball-in-air catch probability, frame by frame, off a
              video feed (needs a real-time object detector - see README).
+  watch-all  Comprehensive live data gathering: runs ESPN, radio
+             transcription, CV catch-prediction, and X injury news
+             concurrently (whichever you configure) and prints one merged
+             event stream ordered by actual arrival - see README.
   settle     Check cached results for completed games and settle open bets,
              updating Elo ratings from the final scores.
   status     Print the paper portfolio's current bankroll, positions, P&L.
@@ -274,6 +278,52 @@ def cmd_watch_play(args):
         print(f"  frame {prediction.frame_idx}: {prediction.message}")
 
 
+def cmd_watch_all(args):
+    from src.cv.trajectory import TrajectoryTracker
+    from src.fusion import FusionEngine
+
+    if not any([args.home and args.away, args.radio_url, args.video, args.browser_url, args.news_team]):
+        raise SystemExit("Configure at least one source: --home/--away (ESPN), --radio-url, "
+                          "--video/--browser-url (CV), or --news-team.")
+
+    engine = FusionEngine()
+    active = []
+
+    if args.home and args.away:
+        engine.add_espn(args.home.upper(), args.away.upper())
+        active.append("espn")
+
+    if args.radio_url:
+        engine.add_radio(args.radio_url)
+        active.append("radio")
+
+    if args.video or args.browser_url:
+        try:
+            detector = _pick_play_detector(args)
+        except RuntimeError as e:
+            raise SystemExit(str(e))
+        source = args.browser_url or args.video
+        engine.add_cv(source, detector, TrajectoryTracker(), is_browser=bool(args.browser_url),
+                      sample_every_n_frames=args.sample_every)
+        active.append("cv")
+
+    if args.news_team:
+        from src import news_signal
+        if not news_signal.is_configured():
+            print("WARNING: --news-team given but X_BEARER_TOKEN isn't set - news source will stay silent.")
+        engine.add_news(args.news_team)
+        active.append("news")
+
+    print(f"Watching with sources: {', '.join(active)} - Ctrl+C to stop.")
+    try:
+        for event in engine.events():
+            print(f"  [{event.source}/{event.kind}] {event.message}")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        engine.stop()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -316,6 +366,21 @@ def main():
     p_watch.add_argument("--sample-every", type=int, default=1,
                           help="Only run detection on every Nth frame (trade resolution for speed)")
     p_watch.set_defaults(func=cmd_watch_play)
+
+    p_all = sub.add_parser("watch-all")
+    p_all.add_argument("--home", help="Home team abbreviation, e.g. KC - enables the ESPN source")
+    p_all.add_argument("--away", help="Away team abbreviation, e.g. SF - enables the ESPN source")
+    p_all.add_argument("--radio-url", help="Radio/audio stream URL - enables live transcription")
+    p_all.add_argument("--video", help="Video file/stream URL - enables CV catch-prediction")
+    p_all.add_argument("--browser-url", help="Website URL to capture via headless browser instead of "
+                                              "--video - enables CV catch-prediction off a stream page")
+    p_all.add_argument("--news-team", help="Team/player name to watch for injury news on X "
+                                            "(needs X_BEARER_TOKEN)")
+    p_all.add_argument("--detector", choices=["auto", "roboflow", "huggingface", "coco"], default="auto",
+                        help="Detector for the CV source, if --video/--browser-url is given.")
+    p_all.add_argument("--sample-every", type=int, default=1,
+                        help="Only run CV detection on every Nth frame")
+    p_all.set_defaults(func=cmd_watch_all)
 
     args = parser.parse_args()
     args.func(args)
