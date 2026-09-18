@@ -13,6 +13,43 @@ python tools/demo_insights.py
 python tools/demo_play_analysis.py
 ```
 
+## Comprehensive data gathering: `watch-all`
+
+`src/fusion.py`'s `FusionEngine` runs however many of four independent signal sources you configure -
+concurrently, each in its own thread - and merges them into one event stream ordered by actual arrival,
+not by source. That ordering is the point: whichever source reports something first is what you see
+first, since no single source here is complete on its own.
+
+```
+python main.py watch-all --home KC --away SF                          # ESPN only
+python main.py watch-all --home KC --away SF --radio-url <stream_url> # + live radio transcription
+python main.py watch-all --browser-url <stream_page_url>              # + CV catch-prediction off a website
+python main.py watch-all --news-team "Patrick Mahomes"                # + X injury-news polling
+```
+
+- **ESPN** (`--home`/`--away`) -- the score/clock feed, as in `live`.
+- **Radio** (`--radio-url`, `src/radio_feed.py`) -- transcribes the stream locally via `faster-whisper`
+  (no API key) and keyword-spots play events (touchdown, interception, fumble, sack, penalty, safety,
+  injury). Verified against a real public stream: transcription came back correct, but it took 301s to
+  process 10s of audio in this dev environment (~30x real-time) -- not explained by streams naturally
+  being rate-limited to real-time delivery alone, so something in the network path or decode loop is a
+  real bottleneck that needs diagnosing somewhere with better throughput to the stream origin. The
+  transcription and event-detection logic itself is correct and unit-tested regardless.
+- **CV** (`--video` or `--browser-url`, `src/cv/browser_capture.py`) -- `--browser-url` is what makes
+  "point this at a stream site" work at all: `cv2.VideoCapture` can't decode a JS-rendered video player
+  embedded in a page, so this launches a real headless Chromium and pulls frames via the Chrome DevTools
+  Protocol's screencast instead. Verified for real, not just import-tested: loaded a page with an
+  actually-playing `<video>` element and confirmed the screencast delivers real changing frames (81
+  frames in 6s, measurable pixel movement) -- headless Chrome has historically had issues compositing
+  video for screencast, so this was the critical thing to check before trusting it. A real streaming
+  site may require a login/paywall step before the player renders (`headless=False` and log in manually
+  first); some sites also detect and block headless browsers outright.
+- **News** (`--news-team`, `src/news_signal.py`) -- polls X for injury news from trusted insiders.
+
+For lower end-to-end latency at scale, the right lever is running this in a cloud VM close to the
+stream/audio origin -- that network hop dominates real latency far more than local compute does, for
+both the browser capture and the radio transcription paths.
+
 ## Setup
 ```
 pip install -r requirements.txt
@@ -55,7 +92,9 @@ src/elo.py                   Elo ratings + win probability
 src/espn_feed.py             live game state from ESPN (default live source)
 src/win_probability.py       blends Elo prior with live game state
 src/insights.py              GameState stream -> plain-English WP narration
-src/cv/                      scoreboard OCR, ball tracking, trajectory projection
+src/cv/                      scoreboard OCR, ball tracking, trajectory projection, browser capture
+src/radio_feed.py            local live radio transcription + play-event keyword spotting
+src/fusion.py                merges ESPN/radio/CV/news into one arrival-ordered event stream
 src/news_signal.py           off-field injury/news signal from trusted X accounts
 src/polymarket_client.py     Polymarket Gamma/CLOB reads (read-only, no auth)
 src/scoring_model.py         calibrated margin/total distribution -- prices every market family
@@ -63,7 +102,7 @@ src/market_catalog.py        generic market-type -> pricing-spec registry and te
 src/market_log.py            appends every discovered market to state/market_catalog.csv
 src/strategy.py              edge detection + Kelly position sizing
 src/paper_broker.py          simulated bankroll, positions, trade log, P&L
-main.py                      CLI: pregame / trade-game / live / watch-play / settle / status
+main.py                      CLI: pregame / trade-game / live / watch-play / watch-all / settle / status
 ```
 State (Elo ratings, portfolio, trade log, market catalog) lives in gitignored flat JSON/CSV under
 `state/` -- no database.
