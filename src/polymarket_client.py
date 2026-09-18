@@ -160,6 +160,7 @@ def get_event_markets(slug_or_url):
             "volume": float(m.get("volumeNum") or 0.0),
             "closed": m.get("closed", False),
             "active": m.get("active", True),
+            "game_start": m.get("gameStartTime"),
         })
 
     home_info = {"abbr": _team_abbr(home), "alias": home.get("alias"), "name": home.get("name")}

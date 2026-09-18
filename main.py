@@ -85,6 +85,14 @@ def cmd_trade_game(args):
     home, away, markets = polymarket_client.get_event_markets(args.slug_or_url)
     print(f"{away['name']} @ {home['name']} ({slug}): {len(markets)} markets found.")
 
+    game_start = next((_parse_game_start(m["game_start"]) for m in markets if m.get("game_start")), None)
+    game_live = game_start is not None and datetime.now(timezone.utc) >= game_start
+    if game_live and not args.force:
+        print(f"WARNING: this game started at {game_start} and may already be in progress or over. "
+              f"This model is pregame-only (Elo, no live score) - markets have already priced in real "
+              f"game events it can't see, so any 'edge' found now is model staleness, not real. "
+              f"Skipping trades (still logging the full catalog). Pass --force to trade anyway.")
+
     tradable_ids = set()
     tracked_types = set()
     illiquid_skipped = 0
@@ -94,6 +102,8 @@ def cmd_trade_game(args):
             continue
         if m["volume"] < config.MIN_MARKET_VOLUME:
             illiquid_skipped += 1
+            continue
+        if game_live and not args.force:
             continue
         position, tradable = strategy.evaluate_generic_market(
             m, home["abbr"], away["abbr"], home["alias"], away["alias"], model, broker)
@@ -273,6 +283,10 @@ def main():
     p_trade_game = sub.add_parser("trade-game")
     p_trade_game.add_argument("slug_or_url",
                                help="Polymarket game URL (e.g. https://polymarket.com/sports/nfl/nfl-det-buf-2026-09-18) or bare event slug")
+    p_trade_game.add_argument("--force", action="store_true",
+                               help="Trade even if the game has already started (the scoring model is "
+                                    "pregame-only and will likely be wrong once real game events have "
+                                    "happened) - off by default.")
     p_trade_game.set_defaults(func=cmd_trade_game)
 
     p_live = sub.add_parser("live")
