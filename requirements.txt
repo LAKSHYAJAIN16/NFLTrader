@@ -6,5 +6,7 @@ opencv-python>=4.9
 pytesseract>=0.3.10
 
 # Live play analysis (ball-in-air catch prediction) - optional. Pick one detector:
-ultralytics>=8.2      # zero-setup fallback (generic COCO YOLO, downloads weights on first run)
-inference-sdk>=0.9    # recommended: calls a Roboflow-hosted model fine-tuned on football (needs ROBOFLOW_API_KEY)
+ultralytics>=8.2       # zero-setup fallback (generic COCO YOLO, downloads weights on first run)
+inference-sdk>=0.9     # recommended: calls a Roboflow-hosted model fine-tuned on football (needs ROBOFLOW_API_KEY)
+transformers>=4.44     # no-API-key alternative: local zero-shot Grounding DINO (--detector huggingface)
+torch>=2.3              # ^ needed by transformers for local inference; large install, GPU strongly preferred

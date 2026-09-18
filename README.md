@@ -9,7 +9,7 @@ I wanted to see if I could turn live NFL games into a real-time win-probability 
 - `src/cv/scoreboard_reader.py` reads a scoreboard off video via OpenCV/Tesseract instead (`--source cv`), needs a calibrated region-of-interest per broadcast
 - `src/win_probability.py` blends a pregame Elo prior (`src/elo.py`, bootstrapped from nflverse history) with score, clock, possession, and field position
 - `src/insights.py` turns win-probability swings into plain-English narration (touchdown, turnover, etc.), filtered by `INSIGHT_MIN_DELTA` so it's not spamming
-- `src/cv/trajectory.py` fits a thrown ball's arc to project landing spot + catch probability, fed by `src/cv/ball_tracker.py` (generic YOLOv8, unproven on real broadcast video) or `src/cv/roboflow_tracker.py` (football-specific model, needs a Roboflow key)
+- `src/cv/trajectory.py` fits a thrown ball's arc to project landing spot + catch probability, fed by one of three interchangeable detectors: `src/cv/ball_tracker.py` (generic YOLOv8, no setup, unproven on real broadcast video), `src/cv/roboflow_tracker.py` (football-specific model, needs a Roboflow key), or `src/cv/huggingface_tracker.py` (local zero-shot Grounding DINO, no API key but a heavy `transformers`+`torch` install)
 - `src/news_signal.py` optionally watches trusted NFL insiders on X for injury/inactive news (needs `X_BEARER_TOKEN`, no-ops without one)
 - `src/polymarket_client.py` + `src/strategy.py` + `src/paper_broker.py` read Polymarket odds, size a fractional-Kelly bet against any edge, and track a simulated bankroll
 - `src/scoring_model.py` fits a margin/total point distribution from Elo, calibrated against real nflverse history -- prices spreads, totals, team totals, and exact-margin buckets, not just the moneyline
@@ -36,6 +36,14 @@ pip install inference-sdk
 export ROBOFLOW_API_KEY=<free key from roboflow.com>
 export ROBOFLOW_BALL_MODEL_ID=<project-slug>/<version>
 ```
+For the local Hugging Face detector (`--detector huggingface`) -- no account or API key needed at
+all, unlike the other two, but a heavy install and download:
+```
+pip install transformers torch
+```
+(Correction on something claimed earlier in this project: Hugging Face's *hosted* inference API was
+assumed to allow free anonymous access. Tested directly -- it now 401s without a token, same as
+Roboflow. Running the model locally is the actual zero-credential option.)
 
 ## Running it
 ```

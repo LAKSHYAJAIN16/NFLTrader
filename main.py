@@ -236,9 +236,15 @@ def _pick_play_detector(args):
         print("Using Roboflow detector...")
         return roboflow_tracker.RoboflowTracker()
 
+    if args.detector == "huggingface":
+        from src.cv.huggingface_tracker import HuggingFaceTracker
+        print("Using local Hugging Face zero-shot detector (Grounding DINO)...")
+        return HuggingFaceTracker()
+
     from src.cv.ball_tracker import BallTracker
     print("Using generic COCO YOLO detector (set ROBOFLOW_API_KEY + "
-          "ROBOFLOW_*_MODEL_ID for the fine-tuned option - see README)...")
+          "ROBOFLOW_*_MODEL_ID for the fine-tuned option, or --detector huggingface "
+          "for a no-API-key zero-shot option - see README)...")
     return BallTracker()
 
 
@@ -289,8 +295,10 @@ def main():
 
     p_watch = sub.add_parser("watch-play")
     p_watch.add_argument("--video", required=True, help="Video file path or stream URL")
-    p_watch.add_argument("--detector", choices=["auto", "roboflow", "coco"], default="auto",
-                          help="auto (default): Roboflow if ROBOFLOW_API_KEY is set, else COCO YOLO.")
+    p_watch.add_argument("--detector", choices=["auto", "roboflow", "huggingface", "coco"], default="auto",
+                          help="auto (default): Roboflow if ROBOFLOW_API_KEY is set, else COCO YOLO. "
+                               "huggingface: local zero-shot Grounding DINO, no API key needed but a "
+                               "heavy install (pip install transformers torch).")
     p_watch.add_argument("--sample-every", type=int, default=1,
                           help="Only run detection on every Nth frame (trade resolution for speed)")
     p_watch.set_defaults(func=cmd_watch_play)
