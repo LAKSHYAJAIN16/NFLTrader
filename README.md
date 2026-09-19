@@ -1,6 +1,6 @@
 # NFLTrader
 
-NFLTrader watches a game live (free ESPN feed by default, or OpenCV/OCR reading a broadcast scoreboard), turns score/clock/possession into a real-time win-probability feed blended with a pregame Elo prior, narrates why the number is swinging, and optionally paper-trades any edge it finds against Polymarket's price. Every "bet" is a simulated position tracked locally -- no wallet involved.
+NFLTrader watches a game live (free ESPN feed by default, or OpenCV/OCR reading a broadcast scoreboard), turns score/clock/possession into a real-time win-probability feed blended with a pregame Elo prior, narrates why the number is swinging, and optionally paper-trades any edge it finds against Polymarket's price. Every "bet" is a simulated position tracked.
 
 ## How it works
 The live feed (ESPN by default, or `--source cv` for OpenCV/Tesseract scoreboard reading off video) drives a win-probability model built on an Elo prior bootstrapped from nflverse history. Swings get turned into plain-English narration, filtered so it's not spamming. Thrown-ball trajectory projection is optional and pluggable across three detectors (YOLOv8, Roboflow, or a local zero-shot Hugging Face model), and an optional X-based news signal watches trusted NFL insiders for injury news. On the trading side, a calibrated margin/total model prices spreads, totals, team totals, and exact-margin buckets against Polymarket odds, sizes a fractional-Kelly position, and tracks a simulated bankroll. See `src/` for the module breakdown below.
