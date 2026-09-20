@@ -84,6 +84,24 @@ python main.py live --source cv --video <path_or_url> --home KC --away SF    # C
 
 `trade-game` takes a full Polymarket URL or bare slug, logs every market it finds to `state/market_catalog.csv`, and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) since a $0-volume quote is a seeded default, not a real consensus. Player-prop markets aren't included -- they're rendered into Polymarket's page HTML rather than served from the public API.
 
+## Web dashboard
+```
+python main.py web                 # http://127.0.0.1:5000, local-only by default
+python main.py web --host 0.0.0.0  # also reachable from other devices on your network
+```
+A small Flask app (`web/app.py`) plus one static page (`web/static/index.html`, no build step, no
+npm) that wraps the same modules the CLI uses -- it does not duplicate any model logic. It's operational
+today as a **local dashboard only**: nothing is deployed to the internet, so the only way to "access it"
+is to run the command above on a machine with this repo and hit that URL yourself (or another device on
+your LAN, with `--host 0.0.0.0`). There is no public URL.
+
+- Game picker sourced from ESPN's live scoreboard (`/api/scoreboard`)
+- Live win-probability bar + sparkline and the insight-narration feed for whichever game you pick
+  (`/api/game?home=..&away=..`, polled every 5s -- reuses `EloRatings`, `win_probability`, and
+  `InsightEngine` exactly as `main.py live` does)
+- Paper portfolio panel: bankroll, open positions, realized P&L (`/api/status`, polled every 10s,
+  reads the same `state/portfolio.json` the CLI writes)
+
 ## Layout
 ```
 src/elo.py                   Elo ratings + win probability
@@ -100,7 +118,9 @@ src/market_catalog.py        generic market-type -> pricing-spec registry and te
 src/market_log.py            appends every discovered market to state/market_catalog.csv
 src/strategy.py              edge detection + Kelly position sizing
 src/paper_broker.py          simulated bankroll, positions, trade log, P&L
-main.py                      CLI: pregame / trade-game / live / watch-play / watch-all / settle / status
+web/app.py                   Flask API for the local dashboard (wraps the modules above, no new logic)
+web/static/index.html        dashboard page: game picker, live win-prob chart, insight feed, portfolio
+main.py                      CLI: pregame / trade-game / live / watch-play / watch-all / settle / status / web
 ```
 State (Elo ratings, portfolio, trade log, market catalog) lives in gitignored flat JSON/CSV under
 `state/` -- no database.
