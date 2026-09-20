@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFLTrader</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #131722;
+    --border: #232838;
+    --text: #e6e9ef;
+    --muted: #8b93a7;
+    --home: #4f8cff;
+    --away: #ff6b6b;
+    --good: #3ecf8e;
+    --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  select, button {
+    background: #1b2130; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 14px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--home); }
+  .picker-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .scoreline { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px; }
+  .team { font-size: 28px; font-weight: 600; }
+  .team.away { color: var(--away); text-align: left; }
+  .team.home { color: var(--home); text-align: right; }
+  .meta { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .wp-bar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .wp-bar .away-fill { background: var(--away); display: flex; align-items: center; justify-content: flex-start; padding-left: 10px; font-weight: 600; transition: width .4s ease; }
+  .wp-bar .home-fill { background: var(--home); display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; font-weight: 600; transition: width .4s ease; }
+  canvas { width: 100%; height: 90px; display: block; margin-top: 14px; }
+  #insights { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+  #insights li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  #insights li:last-child { border-bottom: none; }
+  #insights .ts { color: var(--muted); font-size: 11px; margin-right: 6px; }
+  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-row .v { font-weight: 600; }
+  .v.pos { color: var(--good); }
+  .v.neg { color: var(--bad); }
+  .empty { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); font-size: 13px; }
+  .position { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .position:last-child { border-bottom: none; }
+  .position .q { color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>NFLTrader</h1>
+  <div class="subtitle">Live win probability vs. Polymarket -- paper trades only, no real money.</div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2>Live game</h2>
+        <div class="picker-row">
+          <select id="game-picker"><option value="">Loading scoreboard...</option></select>
+          <button id="watch-btn">Watch</button>
+          <span id="game-status" class="empty"></span>
+        </div>
+
+        <div id="game-view" style="display:none">
+          <div class="scoreline">
+            <div class="team away"><span id="away-abbr"></span> <span id="away-score"></span></div>
+            <div class="team home"><span id="home-score"></span> <span id="home-abbr"></span></div>
+          </div>
+          <div class="meta" id="game-meta"></div>
+          <div class="wp-bar">
+            <div class="away-fill" id="away-fill">0%</div>
+            <div class="home-fill" id="home-fill">0%</div>
+          </div>
+          <canvas id="wp-chart" width="600" height="90"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Insight feed</h2>
+        <ul id="insights"><li class="empty">Pick a game and hit Watch.</li></ul>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Paper portfolio</h2>
+        <div class="stat-row"><span>Bankroll</span><span class="v" id="bankroll">--</span></div>
+        <div class="stat-row"><span>Open positions</span><span class="v" id="open-positions">--</span></div>
+        <div class="stat-row"><span>Settled (W-L)</span><span class="v" id="record">--</span></div>
+        <div class="stat-row"><span>Realized P&amp;L</span><span class="v" id="pnl">--</span></div>
+      </div>
+      <div class="panel">
+        <h2>Open positions</h2>
+        <div id="positions"><div class="empty">None</div></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const POLL_GAME_MS = 5000;
+const POLL_STATUS_MS = 10000;
+let watching = null; // {home, away}
+let gameTimer = null;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+async function loadScoreboard() {
+  const picker = document.getElementById("game-picker");
+  try {
+    const games = await fetchJSON("/api/scoreboard");
+    if (!games.length) {
+      picker.innerHTML = '<option value="">No games on the board right now</option>';
+      return;
+    }
+    picker.innerHTML = games.map(g =>
+      `<option value="${g.home_abbr}|${g.away_abbr}">${g.away_name} @ ${g.home_name} -- ${g.status}</option>`
+    ).join("");
+  } catch (e) {
+    picker.innerHTML = '<option value="">Scoreboard unavailable</option>';
+    document.getElementById("game-status").textContent = e.message;
+  }
+}
+
+function fmtClock(state) {
+  const m = Math.floor(state.clock_seconds / 60);
+  const s = String(state.clock_seconds % 60).padStart(2, "0");
+  const q = state.quarter >= 5 ? "OT" : `Q${state.quarter}`;
+  return `${q} ${m}:${s}`;
+}
+
+function drawChart(history) {
+  const canvas = document.getElementById("wp-chart");
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (history.length < 2) return;
+
+  ctx.strokeStyle = "#232838";
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#4f8cff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  history.forEach((pt, i) => {
+    const x = (i / (history.length - 1)) * w;
+    const y = h - (pt.wp * h);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function addInsight(text) {
+  const list = document.getElementById("insights");
+  if (list.querySelector(".empty")) list.innerHTML = "";
+  const li = document.createElement("li");
+  const ts = new Date().toLocaleTimeString();
+  li.innerHTML = `<span class="ts">${ts}</span>${text}`;
+  list.prepend(li);
+  while (list.children.length > 50) list.removeChild(list.lastChild);
+}
+
+async function pollGame() {
+  if (!watching) return;
+  try {
+    const g = await fetchJSON(`/api/game?home=${watching.home}&away=${watching.away}`);
+    document.getElementById("game-view").style.display = "block";
+    document.getElementById("game-status").textContent = "";
+    document.getElementById("home-abbr").textContent = g.home_abbr;
+    document.getElementById("away-abbr").textContent = g.away_abbr;
+    document.getElementById("home-score").textContent = g.home_score;
+    document.getElementById("away-score").textContent = g.away_score;
+    document.getElementById("game-meta").textContent = fmtClock(g) +
+      (g.possession_home === true ? ` -- ${g.home_abbr} ball` :
+       g.possession_home === false ? ` -- ${g.away_abbr} ball` : "");
+
+    const homePct = Math.round(g.win_prob_home * 100);
+    const awayPct = 100 - homePct;
+    document.getElementById("home-fill").style.width = homePct + "%";
+    document.getElementById("away-fill").style.width = awayPct + "%";
+    document.getElementById("home-fill").textContent = homePct + "%";
+    document.getElementById("away-fill").textContent = awayPct + "%";
+
+    drawChart(g.history);
+    if (g.insight) addInsight(g.insight);
+  } catch (e) {
+    document.getElementById("game-status").textContent = e.message;
+  }
+}
+
+document.getElementById("watch-btn").addEventListener("click", () => {
+  const val = document.getElementById("game-picker").value;
+  if (!val) return;
+  const [home, away] = val.split("|");
+  watching = { home, away };
+  document.getElementById("insights").innerHTML = '<li class="empty">Watching...</li>';
+  if (gameTimer) clearInterval(gameTimer);
+  pollGame();
+  gameTimer = setInterval(pollGame, POLL_GAME_MS);
+});
+
+async function pollStatus() {
+  try {
+    const s = await fetchJSON("/api/status");
+    document.getElementById("bankroll").textContent = "$" + s.summary.bankroll.toFixed(2);
+    document.getElementById("open-positions").textContent = s.summary.open_positions;
+    document.getElementById("record").textContent = `${s.summary.wins}-${s.summary.losses}`;
+    const pnl = s.summary.realized_pnl;
+    const pnlEl = document.getElementById("pnl");
+    pnlEl.textContent = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
+    pnlEl.className = "v " + (pnl >= 0 ? "pos" : "neg");
+
+    const posDiv = document.getElementById("positions");
+    if (!s.open_positions.length) {
+      posDiv.innerHTML = '<div class="empty">None</div>';
+    } else {
+      posDiv.innerHTML = s.open_positions.map(p => `
+        <div class="position">
+          <div>${p.side_team} @ ${p.entry_price.toFixed(2)} -- stake $${p.stake.toFixed(2)}</div>
+          <div class="q">${p.question}</div>
+        </div>`).join("");
+    }
+  } catch (e) {
+    // portfolio state file may not exist yet - not fatal
+  }
+}
+
+loadScoreboard();
+pollStatus();
+setInterval(pollStatus, POLL_STATUS_MS);
+</script>
+</body>
+</html>
