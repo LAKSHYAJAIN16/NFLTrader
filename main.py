@@ -22,6 +22,8 @@ Modes:
   settle     Check cached results for completed games and settle open bets,
              updating Elo ratings from the final scores.
   status     Print the paper portfolio's current bankroll, positions, P&L.
+  web        Serve the local dashboard (live win prob + insights + paper
+             portfolio) at http://127.0.0.1:5000 - see README.
 """
 
 import argparse
@@ -324,6 +326,12 @@ def cmd_watch_all(args):
         engine.stop()
 
 
+def cmd_web(args):
+    from web.app import run as run_web
+    print(f"Serving the NFLTrader dashboard at http://{args.host}:{args.port} (Ctrl+C to stop)...")
+    run_web(host=args.host, port=args.port)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -356,6 +364,13 @@ def main():
     p_settle.set_defaults(func=cmd_settle)
 
     sub.add_parser("status").set_defaults(func=cmd_status)
+
+    p_web = sub.add_parser("web")
+    p_web.add_argument("--host", default="127.0.0.1",
+                        help="Bind address (default 127.0.0.1, local-only; use 0.0.0.0 to allow other "
+                             "devices on your network to connect)")
+    p_web.add_argument("--port", type=int, default=5000)
+    p_web.set_defaults(func=cmd_web)
 
     p_watch = sub.add_parser("watch-play")
     p_watch.add_argument("--video", required=True, help="Video file path or stream URL")
