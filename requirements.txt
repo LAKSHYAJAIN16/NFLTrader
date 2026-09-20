@@ -1,5 +1,6 @@
 requests>=2.31
 pytest>=8.0
+flask>=3.0        # local web dashboard (`python main.py web`) - see README
 
 # CV scoreboard OCR mode (--source cv) - optional, only needed off a video feed
 opencv-python>=4.9

@@ -38,6 +38,34 @@ def find_event_id(home_abbr, away_abbr):
     return None
 
 
+def list_games():
+    """Returns every game on ESPN's current scoreboard as a plain dict, for
+    UI pickers (the web dashboard's game selector) - not used by the CLI
+    itself, which already knows its matchup from --home/--away."""
+    resp = requests.get(SCOREBOARD_URL, timeout=15)
+    resp.raise_for_status()
+    games = []
+    for event in resp.json().get("events", []):
+        comp = event["competitions"][0]
+        by_side = {c["homeAway"]: c for c in comp["competitors"]}
+        home, away = by_side.get("home"), by_side.get("away")
+        if not home or not away:
+            continue
+        status_type = event.get("status", {}).get("type", {})
+        games.append({
+            "event_id": event["id"],
+            "home_abbr": home["team"]["abbreviation"],
+            "away_abbr": away["team"]["abbreviation"],
+            "home_name": home["team"].get("shortDisplayName", home["team"]["abbreviation"]),
+            "away_name": away["team"].get("shortDisplayName", away["team"]["abbreviation"]),
+            "home_score": int(home.get("score", 0) or 0),
+            "away_score": int(away.get("score", 0) or 0),
+            "status": status_type.get("shortDetail", ""),
+            "in_progress": status_type.get("state") == "in",
+        })
+    return games
+
+
 def _parse_clock(clock_text):
     if not clock_text or ":" not in clock_text:
         return 0
