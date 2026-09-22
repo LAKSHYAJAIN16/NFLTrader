@@ -46,7 +46,7 @@
   .tagline { color: var(--muted); font-size: 13px; }
   .layout {
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr) 272px;
+    grid-template-columns: 250px minmax(0, 1fr) minmax(400px, 470px);
     gap: 20px;
     padding: 0 28px 40px;
     align-items: start;
@@ -178,37 +178,147 @@
   .banner { margin: 12px 20px 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--away) 12%, var(--surface)); color: #ffb3b3; font-size: 13px; }
   .banner button, .retry { margin-left: 8px; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
 
-  /* ---------- portfolio ---------- */
-  .side-col { position: sticky; top: 16px; padding: 16px 18px; }
-  .stat { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--line); }
-  .stat:last-of-type { border-bottom: 0; }
-  .stat span:first-child { color: var(--muted); }
-  .stat .v { font-weight: 600; }
-  .v.pos { color: var(--live); }
-  .v.neg { color: var(--away); }
-  .side-col h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 6px; }
-  .position { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
-  .position .q { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  /* ---------- market board ---------- */
+  .market-col {
+    position: sticky; top: 16px; max-height: calc(100vh - 32px);
+    display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  }
+  .mk-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+  .mk-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .mk-title-row h2 { font-size: 16px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .badge { font-size: 12px; font-weight: 600; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
+  .badge.live { color: var(--live); background: color-mix(in srgb, var(--live) 12%, var(--surface)); }
+  .pf { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+  .pf div { min-width: 0; }
+  .pf .k { display: block; font-size: 11px; color: var(--faint); font-weight: 500; white-space: nowrap; }
+  .pf .v { display: block; font-size: 15px; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pos { color: var(--live); }
+  .neg { color: var(--away); }
+  .mk-controls { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+  .mk-controls .seg { flex: none; }
+  .search {
+    flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px;
+  }
+  .search::placeholder { color: var(--faint); }
+  .search:focus-visible { outline-offset: 0; }
+  .legend { font-size: 12px; color: var(--faint); margin-top: 10px; }
+  .legend b { color: var(--muted); font-weight: 600; }
+
+  .mk-body { overflow-y: auto; flex: 1; min-height: 0; padding-bottom: 8px; }
+  .mk-sec-head {
+    position: sticky; top: 0; z-index: 2; width: 100%;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 18px; background: var(--surface); border: 0; border-top: 1px solid var(--line);
+    font-size: 13px; font-weight: 600; color: var(--text); text-align: left; cursor: pointer;
+  }
+  .mk-sec-head .n { color: var(--faint); font-weight: 500; }
+  .mk-sec-head .chev { width: 12px; height: 12px; flex: none; color: var(--faint); transition: transform .2s var(--ease-out); }
+  .mk-sec-head[aria-expanded="true"] .chev { transform: rotate(90deg); }
+  .mk-cols {
+    display: grid; grid-template-columns: minmax(0, 1fr) 44px 48px 52px 78px; gap: 8px;
+    padding: 6px 18px; font-size: 11px; color: var(--faint); font-weight: 500;
+  }
+  .mk-cols span:not(:first-child) { text-align: right; }
+  .mk { padding: 10px 18px 8px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+  .mk.dim .oc-name, .mk.dim .oc-price { color: var(--muted); }
+  .mk-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  .mk-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 12px; color: var(--faint); margin: 2px 0 6px; }
+  .flag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+  .flag.warn { color: #ffc861; }
+  .oc {
+    display: grid; grid-template-columns: minmax(0, 1fr) 44px 48px 52px 78px; gap: 8px; align-items: center;
+    padding: 3px 0; font-size: 14px;
+  }
+  .oc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .oc-price, .oc-model, .oc-edge { text-align: right; }
+  .oc-model { color: var(--muted); }
+  .oc-edge { font-weight: 600; color: var(--faint); }
+  .oc-edge.pos { color: var(--live); }
+  .buy {
+    justify-self: end; min-width: 64px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    transition: background-color .15s var(--ease-out), border-color .15s var(--ease-out), color .15s var(--ease-out);
+  }
+  .buy:hover { border-color: var(--muted); color: var(--text); }
+  .buy.primary { background: var(--live); border-color: var(--live); color: #062417; }
+  .buy.primary:hover { background: color-mix(in srgb, var(--live) 85%, #fff); }
+  .buy:disabled { opacity: .5; cursor: default; }
+  .holding { font-size: 12px; color: var(--text); margin-top: 6px; padding: 5px 8px; border-radius: 6px; background: color-mix(in srgb, var(--home) 12%, var(--surface)); }
+
+  .buy-form {
+    margin: 6px 0 4px; padding: 10px 12px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; font-size: 13px;
+  }
+  .buy-form .line { grid-column: 1 / -1; color: var(--muted); }
+  .buy-form .line b { color: var(--text); font-weight: 600; }
+  .stake-in { display: flex; align-items: center; gap: 6px; }
+  .stake-in input {
+    width: 96px; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums;
+  }
+  .buy-form .pays { color: var(--muted); font-size: 12px; }
+  .buy-form .acts { display: flex; gap: 6px; justify-content: flex-end; }
+  .buy-form .err { grid-column: 1 / -1; color: #ffb3b3; font-size: 12px; }
+  .buy-form .err:empty { display: none; }
+
+  .mk-positions { padding: 4px 18px 10px; }
+  .mk-positions h3 { font-size: 12px; font-weight: 600; color: var(--faint); margin: 10px 0 4px; }
+  .pos-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 6px 0; font-size: 13px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+  .pos-row:first-of-type { border-top: 0; }
+  .pos-row .q { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pos-row .r { text-align: right; font-weight: 600; }
+  .mk-empty { padding: 28px 22px; text-align: center; color: var(--muted); font-size: 14px; }
+  .mk-empty strong { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; }
+  .mk-empty .buy { margin-top: 12px; }
   .muted { color: var(--muted); font-size: 13px; }
-  .fineprint { color: var(--faint); font-size: 12px; margin-top: 14px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; z-index: 10; transform: translate(-50%, 16px);
+    padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 500;
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    opacity: 0; pointer-events: none; transition: opacity .25s var(--ease-out), transform .35s var(--ease-out);
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   .skeleton { height: 54px; margin: 4px 8px; border-radius: 8px; background: var(--surface-2); opacity: .5; }
+  .view-tabs { display: none; }
 
   /* ---------- responsive ---------- */
-  @media (max-width: 1180px) {
-    .layout { grid-template-columns: 260px minmax(0, 1fr); }
-    .side-col { position: static; grid-column: 2; }
-  }
-  @media (max-width: 760px) {
-    .top { padding: 16px 16px 12px; }
-    .layout { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 0 16px 32px; }
-    .side-col { grid-column: auto; }
-    .slate { position: static; max-height: none; padding: 12px 0; }
+  @media (max-width: 1280px) {
+    .layout { grid-template-columns: minmax(0, 1fr) minmax(360px, 430px); }
+    .slate { grid-column: 1 / -1; position: static; max-height: none; padding: 12px 0; }
+    .slate > .panel-title { padding: 0 16px 8px; }
     .slate-list { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 4px; scroll-snap-type: x proximity; }
     .day { display: contents; }
     .day h3 { display: none; }
     .game { flex: none; width: 190px; border-color: var(--line); scroll-snap-align: start; }
     .game .when .d { display: inline; }
+  }
+  @media (max-width: 900px) {
+    .top { padding: 16px 16px 12px; }
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 0 16px 32px; }
+    .view-tabs {
+      display: flex; position: sticky; top: 0; z-index: 5; gap: 4px; padding: 6px;
+      margin: 0 -16px; background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(8px);
+    }
+    .view-tabs button {
+      flex: 1; padding: 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+      font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer;
+    }
+    .view-tabs button[aria-selected="true"] { color: var(--text); background: var(--surface-2); border-color: var(--muted); }
+    .view-tabs .count { color: var(--live); margin-left: 4px; }
+    body[data-view="game"] .market-col { display: none; }
+    body[data-view="markets"] .game-col { display: none; }
+    .market-col { position: static; max-height: none; overflow: visible; }
+    .mk-body { overflow: visible; }
+    .mk-sec-head { top: 52px; }
+  }
+  @media (max-width: 760px) {
     .board { padding: 18px 16px 14px; }
     .matchup { grid-template-columns: 1fr 1fr; }
     .status { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
@@ -220,19 +330,26 @@
     .play { grid-template-columns: 48px minmax(0, 1fr); gap: 4px 10px; padding: 10px 16px; }
     .play .swing { grid-column: 2; text-align: left; padding: 0; }
     .q-head { padding: 12px 16px 6px; }
+    .mk-head, .mk, .mk-cols, .mk-sec-head, .mk-positions { padding-left: 14px; padding-right: 14px; }
+    .mk-cols, .oc { grid-template-columns: minmax(0, 1fr) 40px 42px 46px 70px; gap: 6px; }
+    .pf { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
   }
 </style>
 </head>
-<body>
+<body data-view="game">
   <header class="top">
     <h1 class="brand">NFLTrader</h1>
-    <span class="tagline">Live win probability vs. Polymarket. Paper trades only, no real money.</span>
+    <span class="tagline">Live game, live model, every Polymarket market. Paper trades only, no real money.</span>
   </header>
 
   <div class="layout">
+    <div class="view-tabs" role="tablist" aria-label="View">
+      <button type="button" role="tab" data-view="game" aria-selected="true">Game</button>
+      <button type="button" role="tab" data-view="markets" aria-selected="false">Markets<span class="count num" id="tab-count"></span></button>
+    </div>
     <nav class="slate panel" aria-label="This week's games">
       <h2 class="panel-title">This week</h2>
       <div class="slate-list" id="slate">
@@ -288,22 +405,39 @@
       </section>
     </main>
 
-    <aside class="side-col panel" aria-label="Paper portfolio">
-      <h2 class="panel-title">Paper portfolio</h2>
-      <div class="stat"><span>Bankroll</span><span class="v num" id="bankroll">--</span></div>
-      <div class="stat"><span>Open positions</span><span class="v num" id="open-positions">--</span></div>
-      <div class="stat"><span>Settled (W-L)</span><span class="v num" id="record">--</span></div>
-      <div class="stat"><span>Realized P&amp;L</span><span class="v num" id="pnl">--</span></div>
-      <h3>Open positions</h3>
-      <div id="positions"><div class="muted">None</div></div>
+    <aside class="market-col panel" aria-label="Polymarket markets for this game">
+      <div class="mk-head">
+        <div class="mk-title-row">
+          <h2>Markets</h2>
+          <span class="badge" id="mk-badge">Loading</span>
+        </div>
+        <div class="pf num">
+          <div><span class="k">Bankroll</span><span class="v" id="pf-bankroll">--</span></div>
+          <div><span class="k">At risk, this game</span><span class="v" id="pf-risk">--</span></div>
+          <div><span class="k">Open P&amp;L, this game</span><span class="v" id="pf-open">--</span></div>
+          <div><span class="k">Realized, all games</span><span class="v" id="pf-real">--</span></div>
+        </div>
+        <div class="mk-controls">
+          <div class="seg" role="group" aria-label="Which markets">
+            <button type="button" data-mkview="edges" aria-pressed="true">Edges</button>
+            <button type="button" data-mkview="all" aria-pressed="false">All</button>
+          </div>
+          <input class="search" id="mk-search" type="search" placeholder="Filter markets" aria-label="Filter markets" autocomplete="off">
+        </div>
+        <div class="legend" id="mk-legend"><b>Price</b> is what a share costs now. <b>Edge</b> is model minus price, in points.</div>
+      </div>
+      <div class="mk-body" id="mk-body">
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
     </aside>
   </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const POLL_LIVE_MS = 5000;
 const POLL_PRE_MS = 60000;
 const POLL_SLATE_MS = 60000;
-const POLL_STATUS_MS = 15000;
 const KEY_SWING = 0.05;      // a play that moves win probability 5+ pts is a key play
 const SHOWN_SWING = 0.005;   // below half a point, the swing is noise
 
@@ -420,8 +554,10 @@ function selectGame(id) {
     $("feed-banner").innerHTML = "";
     const g = games.find(x => x.event_id === id);
     if (g) previewFromSlate(g);
+    resetBoard();
   }
   pollGame();
+  pollMarkets();
 }
 
 function previewFromSlate(g) {
@@ -443,6 +579,8 @@ async function pollGame() {
     const g = await fetchJSON(`/api/game?event_id=${encodeURIComponent(id)}`);
     if (id !== selectedId) return;
     $("feed-banner").innerHTML = "";
+    // a game going live (or final) changes how every market is priced: refresh now
+    if (game && game.state !== g.state) pollMarkets();
     game = g;
     renderGame(g);
     const kickoffPassed = new Date(g.kickoff) <= Date.now();
@@ -602,34 +740,293 @@ document.querySelector(".seg").addEventListener("click", e => {
   if (game) renderPlays(game);
 });
 
-/* ---------------- portfolio ---------------- */
+/* ---------------- markets ---------------- */
 
-async function pollStatus() {
+const POLL_MARKETS_LIVE_MS = 10000;
+const POLL_MARKETS_PRE_MS = 60000;
+let board = null;              // last /api/markets payload for selectedId
+let boardView = "edges";
+let boardQuery = "";
+let openGroups = new Set(["Moneyline", "Spread", "Total"]);
+let buy = null;                // {marketId, outcome, stake, busy, error} while a buy form is open
+let marketTimer = null;
+let boardError = null;
+
+const money = v => (v < 0 ? "-$" : "$") + Math.abs(v).toFixed(2);
+const signedMoney = v => (v > 0 ? "+" : v < 0 ? "-" : "") + "$" + Math.abs(v).toFixed(2);
+const cents = p => (p * 100 >= 10 || Number.isInteger(Math.round(p * 1000) / 10) ? Math.round(p * 100) : (p * 100).toFixed(1)) + "¢";
+const pts = e => (e > 0 ? "+" : "") + (e * 100).toFixed(1);
+
+function scheduleMarkets(ms) {
+  clearTimeout(marketTimer);
+  if (ms) marketTimer = setTimeout(pollMarkets, ms);
+}
+
+async function pollMarkets() {
+  const id = selectedId;
+  if (!id) return;
+  if (buy) { scheduleMarkets(4000); return; }   // never yank a buy form out from under you
   try {
-    const s = await fetchJSON("/api/status");
-    $("bankroll").textContent = "$" + s.summary.bankroll.toFixed(2);
-    $("open-positions").textContent = s.summary.open_positions;
-    $("record").textContent = `${s.summary.wins}-${s.summary.losses}`;
-    const pnl = s.summary.realized_pnl;
-    $("pnl").textContent = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
-    $("pnl").className = "v num " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "");
-    $("positions").innerHTML = s.open_positions.length ? s.open_positions.map(p => `
-      <div class="position">
-        <div class="num">${esc(p.side_team)} @ ${p.entry_price.toFixed(2)} · $${p.stake.toFixed(2)}</div>
-        <div class="q">${esc(p.question)}</div>
-      </div>`).join("") : '<div class="muted">None</div>';
+    const b = await fetchJSON(`/api/markets?event_id=${encodeURIComponent(id)}`);
+    if (id !== selectedId) return;
+    board = b; boardError = null;
+    renderBoard();
+    scheduleMarkets(b.state === "in" ? POLL_MARKETS_LIVE_MS : b.state === "pre" ? POLL_MARKETS_PRE_MS : null);
   } catch (e) {
-    // portfolio state file may not exist yet - not fatal
+    if (id !== selectedId) return;
+    boardError = e.message;
+    renderBoard();
+    scheduleMarkets(15000);
   }
 }
+
+function resetBoard() {
+  board = null; buy = null; boardError = null;
+  clearTimeout(marketTimer);
+  $("mk-badge").textContent = "Loading"; $("mk-badge").className = "badge";
+  $("mk-body").innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+}
+
+function marketName(m) {
+  if (m.group === "Moneyline") return "Winner";
+  // "Falcons vs. Packers: O/U 44.5" -> "O/U 44.5"
+  return m.question.replace(/^[^:]*\bvs\.[^:]*:\s*/, "") || m.title;
+}
+
+function edgeCount() {
+  return board && board.available ? board.markets.filter(m => m.best_edge !== null && m.best_edge >= board.edge_threshold).length : 0;
+}
+
+function renderBoard() {
+  const body = $("mk-body");
+  const badge = $("mk-badge");
+  if (!board) {
+    if (boardError) body.innerHTML = `<div class="mk-empty"><strong>Markets unavailable</strong>${esc(boardError)}<br><button class="buy" type="button" onclick="pollMarkets()">Try again</button></div>`;
+    return;
+  }
+  badge.className = "badge" + (board.pricing === "live" ? " live" : "");
+  badge.innerHTML = board.pricing === "live" ? '<span class="live-tag">Live model</span>'
+    : board.pricing === "final" ? "Final, settling" : "Pregame model";
+
+  const pf = board.portfolio;
+  const open = (board.positions || []).filter(p => p.status === "open");
+  const risk = open.reduce((s, p) => s + p.stake, 0);
+  const unreal = open.reduce((s, p) => s + (p.unrealized || 0), 0);
+  $("pf-bankroll").textContent = money(pf.bankroll);
+  $("pf-risk").textContent = open.length ? money(risk) : "$0";
+  $("pf-open").textContent = open.length ? signedMoney(unreal) : "--";
+  $("pf-open").className = "v " + (unreal > 0.005 ? "pos" : unreal < -0.005 ? "neg" : "");
+  $("pf-real").textContent = signedMoney(pf.realized_pnl);
+  $("pf-real").className = "v " + (pf.realized_pnl > 0 ? "pos" : pf.realized_pnl < 0 ? "neg" : "");
+  const n = edgeCount();
+  $("tab-count").textContent = n ? n : "";
+
+  let html = boardError ? `<div class="banner">Couldn't refresh prices: ${esc(boardError)}. Showing the last ones.</div>` : "";
+  if (!board.available) {
+    html += `<div class="mk-empty"><strong>No Polymarket markets for this game</strong>Polymarket hasn't listed it yet. This board fills in once it does.</div>`;
+    body.innerHTML = html;
+    return;
+  }
+
+  html += positionsBlock(board.positions || []);
+  const q = boardQuery.trim().toLowerCase();
+  const matches = m => !q || (marketName(m) + " " + m.question + " " + m.group + " " + (m.period_label || "") + " " + m.outcomes.map(o => o.name).join(" ")).toLowerCase().includes(q);
+
+  if (boardView === "edges") {
+    const list = board.markets.filter(m => m.best_edge !== null && m.best_edge >= board.edge_threshold && matches(m))
+      .sort((a, b) => b.best_edge - a.best_edge);
+    if (!list.length) {
+      const liquid = board.markets.filter(m => m.liquid && m.modeled && m.open).length;
+      html += `<div class="mk-empty"><strong>No edges of ${Math.round(board.edge_threshold * 100)}+ points${q ? " matching that" : " right now"}</strong>
+        The model agrees with the market on all ${liquid} liquid, modeled markets. Markets under $${Math.round(board.min_volume)} traded aren't counted.
+        <br><button class="buy" type="button" data-mkview="all">See all ${board.markets.length} markets</button></div>`;
+    } else {
+      html += colsHead() + list.map(m => marketRow(m, true)).join("");
+    }
+  } else {
+    const byGroup = new Map(board.groups.map(g => [g, []]));
+    board.markets.filter(matches).forEach(m => byGroup.get(m.group).push(m));
+    for (const [group, list] of byGroup) {
+      if (!list.length) continue;
+      const expanded = q ? true : openGroups.has(group);
+      list.sort((a, b) => (b.best_edge ?? -9) - (a.best_edge ?? -9) || b.volume - a.volume);
+      html += `<button type="button" class="mk-sec-head" data-group="${esc(group)}" aria-expanded="${expanded}">
+        <span>${esc(group)} <span class="n">${list.length}</span></span>
+        <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>`;
+      if (expanded) html += colsHead() + list.map(m => marketRow(m, false)).join("");
+    }
+    if (!board.markets.some(matches)) html += `<div class="mk-empty"><strong>Nothing matches “${esc(boardQuery)}”</strong>Try a team, player, line, or market type.</div>`;
+  }
+  body.innerHTML = html;
+  const input = body.querySelector(".buy-form input");
+  if (input && buy && buy.focus) { input.focus(); input.select(); buy.focus = false; }
+}
+
+function colsHead() {
+  return `<div class="mk-cols" aria-hidden="true"><span></span><span>Price</span><span>Model</span><span>Edge</span><span></span></div>`;
+}
+
+function positionsBlock(positions) {
+  if (!positions.length) return "";
+  const rows = positions.map(p => {
+    let right;
+    if (p.status === "open") {
+      const u = p.unrealized ?? 0;
+      right = `<span class="r num ${u > 0.005 ? "pos" : u < -0.005 ? "neg" : ""}">${p.mark !== undefined ? signedMoney(u) : money(p.stake)}</span>`;
+    } else {
+      right = `<span class="r num ${p.won ? "pos" : "neg"}">${p.won ? "Won" : "Lost"} ${signedMoney(p.pnl)}</span>`;
+    }
+    const detail = p.status === "open"
+      ? `${money(p.stake)} at ${cents(p.entry_price)}${p.mark !== undefined ? `, now ${cents(p.mark)}` : ""}`
+      : `${money(p.stake)} at ${cents(p.entry_price)}, settled`;
+    return `<div class="pos-row"><span><b>${esc(p.side_team)}</b> <span class="muted num">${esc(detail)}</span></span>${right}
+      <span class="q">${esc(p.question)}</span></div>`;
+  }).join("");
+  return `<div class="mk-positions"><h3>Your paper positions, this game</h3>${rows}</div>`;
+}
+
+function marketRow(m, showGroup) {
+  const flags = [];
+  if (!m.open) flags.push('<span class="flag">Closed</span>');
+  if (!m.modeled) flags.push('<span class="flag">No model</span>');
+  if (m.modeled && !m.liquid) flags.push(`<span class="flag warn" title="Under $${Math.round(board.min_volume)} traded: the price may not be real">Illiquid</span>`);
+  const where = [showGroup ? m.group : null, m.period_label && m.period !== "full" ? m.period_label : (showGroup && m.period === "full" ? "Full game" : null)]
+    .filter(Boolean).join(" · ");
+  const vol = m.volume >= 1000 ? `$${(m.volume / 1000).toFixed(m.volume >= 10000 ? 0 : 1)}k traded` : `$${Math.round(m.volume)} traded`;
+  const dim = !m.open || (m.modeled && !m.liquid);
+  const holding = m.position && m.position.status === "open"
+    ? `<div class="holding num">You hold <b>${esc(m.position.side_team)}</b>: ${money(m.position.stake)} at ${cents(m.position.entry_price)}${m.position.unrealized !== undefined ? `, ${signedMoney(m.position.unrealized)}` : ""}</div>` : "";
+
+  return `
+    <div class="mk ${dim ? "dim" : ""}">
+      <div class="mk-name">${esc(marketName(m))}</div>
+      <div class="mk-meta">${where ? `<span>${esc(where)}</span>` : ""}<span class="num">${vol}</span>${flags.join("")}</div>
+      ${m.outcomes.map((o, i) => outcomeRow(m, o, i)).join("")}
+      ${holding}
+    </div>`;
+}
+
+function outcomeRow(m, o, i) {
+  const held = !!m.position;
+  const canBuy = m.open && !held && o.ask > 0 && o.ask < 1;
+  const edgeCls = o.edge !== null && o.edge >= board.edge_threshold ? "pos" : "";
+  let btn = "";
+  if (canBuy) {
+    btn = o.stake > 0
+      ? `<button type="button" class="buy primary num" data-m="${esc(m.id)}" data-o="${i}" title="Paper buy at ${cents(o.ask)} with the suggested stake">Buy ${money(o.stake).replace(".00", "")}</button>`
+      : `<button type="button" class="buy" data-m="${esc(m.id)}" data-o="${i}">Buy</button>`;
+  }
+  let row = `
+    <div class="oc">
+      <span class="oc-name" title="${esc(o.name)}">${esc(o.name)}</span>
+      <span class="oc-price num">${cents(o.ask)}</span>
+      <span class="oc-model num">${o.model === null ? "–" : Math.round(o.model * 100) + "%"}</span>
+      <span class="oc-edge num ${edgeCls}">${o.edge === null ? "" : pts(o.edge)}</span>
+      ${btn || "<span></span>"}
+    </div>`;
+  if (buy && buy.marketId === m.id && buy.outcome === i) row += buyForm(m, o);
+  return row;
+}
+
+function buyForm(m, o) {
+  const stake = parseFloat(buy.stake);
+  const pays = stake > 0 ? `Pays ${money(stake / o.ask)} if it hits` : "";
+  return `
+    <form class="buy-form" data-m="${esc(m.id)}" data-o="${buy.outcome}">
+      <div class="line">Paper buy <b>${esc(o.name)}</b> · ${esc(marketName(m))} at <b class="num">${cents(o.ask)}</b>${o.model !== null ? ` (model ${Math.round(o.model * 100)}%)` : ""}</div>
+      <label class="stake-in">Stake $<input type="number" min="1" step="0.01" inputmode="decimal" value="${esc(buy.stake)}" aria-label="Stake in dollars"></label>
+      <span class="pays num" id="pays">${pays}</span>
+      <div class="acts" style="grid-column: 1 / -1">
+        <button type="button" class="buy" data-cancel>Cancel</button>
+        <button type="submit" class="buy primary" ${buy.busy ? "disabled" : ""}>${buy.busy ? "Placing..." : "Confirm paper buy"}</button>
+      </div>
+      <div class="err">${esc(buy.error || "")}</div>
+    </form>`;
+}
+
+$("mk-body").addEventListener("click", e => {
+  const sec = e.target.closest(".mk-sec-head");
+  if (sec) {
+    const g = sec.dataset.group;
+    openGroups.has(g) ? openGroups.delete(g) : openGroups.add(g);
+    renderBoard();
+    return;
+  }
+  const viewBtn = e.target.closest("[data-mkview]");
+  if (viewBtn) { setBoardView(viewBtn.dataset.mkview); return; }
+  if (e.target.closest("[data-cancel]")) { buy = null; renderBoard(); return; }
+  const btn = e.target.closest(".buy[data-m]");
+  if (btn && !btn.closest("form")) {
+    const m = board.markets.find(x => x.id === btn.dataset.m);
+    const i = Number(btn.dataset.o);
+    const o = m.outcomes[i];
+    buy = { marketId: m.id, outcome: i, stake: o.stake > 0 ? o.stake.toFixed(2) : "", busy: false, error: "", focus: true };
+    renderBoard();
+  }
+});
+
+$("mk-body").addEventListener("input", e => {
+  if (!buy || !e.target.matches(".buy-form input")) return;
+  buy.stake = e.target.value;
+  const m = board.markets.find(x => x.id === buy.marketId);
+  const ask = m.outcomes[buy.outcome].ask, v = parseFloat(buy.stake);
+  $("pays").textContent = v > 0 ? `Pays ${money(v / ask)} if it hits` : "";
+});
+
+$("mk-body").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!buy || buy.busy) return;
+  buy.busy = true; buy.error = ""; renderBoard();
+  const order = buy;
+  try {
+    const r = await fetch("/api/trade", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_id: selectedId, market_id: order.marketId, outcome: order.outcome, stake: order.stake }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    buy = null;
+    const p = data.position;
+    toast(`Paper buy placed: ${p.side_team}, ${money(p.stake)} at ${cents(p.entry_price)}`);
+    pollMarkets();
+  } catch (err) {
+    if (buy === order) { buy.busy = false; buy.error = err.message; renderBoard(); }
+  }
+});
+
+function setBoardView(view) {
+  boardView = view;
+  document.querySelectorAll("[data-mkview]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mkview === view)));
+  renderBoard();
+}
+document.querySelector(".mk-controls .seg").addEventListener("click", e => {
+  const b = e.target.closest("[data-mkview]");
+  if (b) setBoardView(b.dataset.mkview);
+});
+$("mk-search").addEventListener("input", e => { boardQuery = e.target.value; renderBoard(); });
+
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+/* ---------------- mobile tabs ---------------- */
+
+document.querySelector(".view-tabs").addEventListener("click", e => {
+  const b = e.target.closest("[data-view]");
+  if (!b) return;
+  document.body.dataset.view = b.dataset.view;
+  document.querySelectorAll(".view-tabs [data-view]").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+});
 
 // keep the kickoff countdown honest between polls
 setInterval(() => { if (game && game.state === "pre") renderGame(game); }, 30000);
 
 loadSlate();
 setInterval(loadSlate, POLL_SLATE_MS);
-pollStatus();
-setInterval(pollStatus, POLL_STATUS_MS);
 </script>
 </body>
 </html>
