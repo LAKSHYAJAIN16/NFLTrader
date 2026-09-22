@@ -29,9 +29,8 @@ MARKET_LOOKAHEAD_DAYS = 8   # only evaluate games starting within this window -
 # --- Live / CV win-probability blend ---
 # how quickly the in-game score dominates the pregame Elo prior as the
 # clock runs down (0 = ignore score, 1 = score fully dominates at 0:00)
-WP_SCORE_WEIGHT_MAX = 0.9
-WP_POSSESSION_BONUS = 0.03  # extra win prob credited to the team with the ball
-WP_FIELD_POSITION_MAX = 0.08  # max extra win prob for having the ball at the goal line
+WP_MARGIN_STD = 13.5         # std of NFL final margin around its expectation (~historical)
+WP_DRIVE_SECONDS = 150.0     # clock a typical scoring drive needs; possession value is damped below this
 INSIGHT_MIN_DELTA = 0.02      # smallest win-prob swing worth surfacing as an insight
 
 # --- Live play analysis (ball-in-air catch prediction) ---

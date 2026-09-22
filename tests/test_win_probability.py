@@ -41,3 +41,26 @@ def test_decided_when_no_time_left_and_not_tied():
 def test_tied_at_end_of_regulation_is_not_decided():
     p = live_home_win_prob(0.6, 20, 20, quarter=4, clock_seconds=0)
     assert 0.01 < p < 0.99
+
+
+def test_an_early_lead_counts_from_kickoff():
+    # a 7-0 lead in the 1st quarter is worth a lot more than a coin flip
+    even = live_home_win_prob(0.5, 0, 0, 1, 12 * 60)
+    up_seven = live_home_win_prob(0.5, 7, 0, 1, 12 * 60)
+    assert up_seven - even > 0.15
+
+
+def test_a_touchdown_from_the_one_is_mostly_priced_in():
+    # BUF 1st & goal at the DET 1, then scores and kicks off: the drive already
+    # earned most of the value, so the TD itself must not swing it backwards
+    at_the_one = live_home_win_prob(0.6, 0, 0, 1, 9 * 60 + 15, possession_home=True, yard_line=1)
+    after_td = live_home_win_prob(0.6, 7, 0, 1, 9 * 60 + 9, possession_home=False, yard_line=70)
+    assert after_td >= at_the_one - 0.01
+
+
+def test_possession_matters_less_with_no_time_to_drive():
+    lots = live_home_win_prob(0.5, 14, 14, 4, 600, possession_home=True, yard_line=50)
+    none = live_home_win_prob(0.5, 14, 14, 4, 5, possession_home=True, yard_line=50)
+    base = live_home_win_prob(0.5, 14, 14, 4, 5)
+    assert lots > 0.5
+    assert abs(none - base) < (lots - base) / 3
