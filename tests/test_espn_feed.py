@@ -105,3 +105,63 @@ def test_final_ot_game_reports_overtime():
     state = espn_feed._state_from_summary(summary, "BUF", "DET")
     assert state.quarter == 5
     assert state.clock_seconds == 0
+
+
+def test_espn_abbrs_map_to_elo_history():
+    assert espn_feed.to_elo_abbr("WSH") == "WAS"
+    assert espn_feed.to_elo_abbr("LAR") == "LA"
+    assert espn_feed.to_elo_abbr("BUF") == "BUF"
+
+
+def _event(state):
+    return {"id": "1", "date": "2026-09-27T17:00Z", "status": {"type": {"state": state, "shortDetail": "x"}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "score": "0", "team": {"abbreviation": "BUF"}},
+                {"homeAway": "away", "score": "0", "team": {"abbreviation": "LAC"}}]}]}
+
+
+def test_slate_looks_ahead_once_the_week_is_final(monkeypatch):
+    calls = []
+
+    def fake(params=None):
+        calls.append(params)
+        if params is None:
+            return {"week": {"number": 2}, "season": {"type": 2}, "events": [_event("post")]}
+        return {"events": [_event("pre")]}
+    monkeypatch.setattr(espn_feed, "_fetch_scoreboard", fake)
+
+    games = espn_feed.list_games()
+    assert calls[1] == {"week": 3, "seasontype": 2}
+    assert games[0]["state"] == "pre" and games[0]["kickoff"] == "2026-09-27T17:00Z"
+
+
+def test_slate_stays_on_a_week_with_games_left(monkeypatch):
+    calls = []
+
+    def fake(params=None):
+        calls.append(params)
+        return {"week": {"number": 3}, "season": {"type": 2}, "events": [_event("post"), _event("pre")]}
+    monkeypatch.setattr(espn_feed, "_fetch_scoreboard", fake)
+
+    assert len(espn_feed.list_games()) == 2
+    assert calls == [None]
+
+
+def test_plays_flatten_drives_and_track_possession_after_the_play():
+    summary = dict(LIVE_SUMMARY, drives={"previous": [{"plays": [
+        {"id": "1", "text": " J.Bates kicks 65 yards ", "type": {"text": "Kickoff"},
+         "homeScore": 0, "awayScore": 0, "period": {"number": 1}, "clock": {"displayValue": "15:00"},
+         "start": {"team": {"id": "8"}}, "end": {"team": {"id": "2"}, "yardsToEndzone": 75}},
+    ]}], "current": {"plays": [
+        {"id": "2", "text": "J.Allen pass for 9", "type": {"text": "Pass Reception"},
+         "homeScore": 0, "awayScore": 0, "period": {"number": 1}, "clock": {"displayValue": "14:51"},
+         "start": {"team": {"id": "2"}, "downDistanceText": "1st & 10 at BUF 25"},
+         "end": {"team": {"id": "2"}, "yardsToEndzone": 66}},
+    ]}})
+    plays = espn_feed.plays_from_summary(summary)
+    assert [p["id"] for p in plays] == ["1", "2"]
+    kickoff = plays[0]
+    assert kickoff["text"] == "J.Bates kicks 65 yards"
+    assert kickoff["offense_home"] is False and kickoff["possession_home"] is True
+    assert plays[1]["clock_seconds"] == 14 * 60 + 51
+    assert plays[1]["down_distance"] == "1st & 10 at BUF 25"

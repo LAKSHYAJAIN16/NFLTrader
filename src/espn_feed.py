@@ -38,14 +38,52 @@ def find_event_id(home_abbr, away_abbr):
     return None
 
 
-def list_games():
-    """Returns every game on ESPN's current scoreboard as a plain dict, for
-    UI pickers (the web dashboard's game selector) - not used by the CLI
-    itself, which already knows its matchup from --home/--away."""
-    resp = requests.get(SCOREBOARD_URL, timeout=15)
+# ESPN's abbreviations where they differ from the nflverse history the Elo
+# ratings are built from.
+_ELO_ABBR = {"WSH": "WAS", "LAR": "LA"}
+
+# Clock/administrative "plays" that carry no football, shown muted in feeds.
+NON_ACTION_PLAY_TYPES = {"End Period", "End of Half", "End of Game", "Timeout",
+                         "Official Timeout", "Two-minute warning"}
+
+
+def to_elo_abbr(espn_abbr):
+    return _ELO_ABBR.get(espn_abbr, espn_abbr)
+
+
+def _fetch_scoreboard(params=None):
+    resp = requests.get(SCOREBOARD_URL, params=params, timeout=15)
     resp.raise_for_status()
+    return resp.json()
+
+
+def _upcoming_scoreboard():
+    """ESPN's default scoreboard keeps showing a finished week until the next
+    one starts, so once every game on it is final, look ahead a week (and
+    across the regular season / postseason boundary if that week is empty)."""
+    data = _fetch_scoreboard()
+    events = data.get("events", [])
+    if events and any(e.get("status", {}).get("type", {}).get("state") != "post" for e in events):
+        return data
+
+    week = (data.get("week") or {}).get("number")
+    season_type = (data.get("season") or {}).get("type")
+    if week is None or season_type is None:
+        return data
+    for params in ({"week": week + 1, "seasontype": season_type},
+                   {"week": 1, "seasontype": season_type + 1}):
+        ahead = _fetch_scoreboard(params)
+        if ahead.get("events"):
+            return ahead
+    return data
+
+
+def list_games():
+    """This week's games (or next week's once this one is fully final) as plain
+    dicts for UI pickers - the web dashboard's slate. Not used by the CLI,
+    which already knows its matchup from --home/--away."""
     games = []
-    for event in resp.json().get("events", []):
+    for event in _upcoming_scoreboard().get("events", []):
         comp = event["competitions"][0]
         by_side = {c["homeAway"]: c for c in comp["competitors"]}
         home, away = by_side.get("home"), by_side.get("away")
@@ -54,12 +92,16 @@ def list_games():
         status_type = event.get("status", {}).get("type", {})
         games.append({
             "event_id": event["id"],
+            "kickoff": event.get("date"),
             "home_abbr": home["team"]["abbreviation"],
             "away_abbr": away["team"]["abbreviation"],
             "home_name": home["team"].get("shortDisplayName", home["team"]["abbreviation"]),
             "away_name": away["team"].get("shortDisplayName", away["team"]["abbreviation"]),
+            "home_color": home["team"].get("color"),
+            "away_color": away["team"].get("color"),
             "home_score": int(home.get("score", 0) or 0),
             "away_score": int(away.get("score", 0) or 0),
+            "state": status_type.get("state", "pre"),
             "status": status_type.get("shortDetail", ""),
             "in_progress": status_type.get("state") == "in",
         })
@@ -112,10 +154,76 @@ def _state_from_summary(data, home_abbr, away_abbr, timestamp=None):
     )
 
 
-def read_game_state(event_id, home_abbr, away_abbr) -> GameState:
+def read_summary(event_id):
     resp = requests.get(SUMMARY_URL, params={"event": event_id}, timeout=15)
     resp.raise_for_status()
-    return _state_from_summary(resp.json(), home_abbr, away_abbr)
+    return resp.json()
+
+
+def read_game_state(event_id, home_abbr, away_abbr) -> GameState:
+    return _state_from_summary(read_summary(event_id), home_abbr, away_abbr)
+
+
+def teams_from_summary(data):
+    """{"home": {...}, "away": {...}} with abbr, name, color, score."""
+    comp = data["header"]["competitions"][0]
+    teams = {}
+    for c in comp["competitors"]:
+        team = c["team"]
+        teams[c["homeAway"]] = {
+            "id": str(team["id"]),
+            "abbr": team["abbreviation"],
+            "name": team.get("displayName", team["abbreviation"]),
+            "short_name": team.get("name", team["abbreviation"]),
+            "color": team.get("color"),
+            "score": int(c.get("score", 0) or 0),
+        }
+    return teams
+
+
+def plays_from_summary(data):
+    """Every play so far, oldest first, flattened out of ESPN's drives.
+
+    `offense_home` is who had the ball when the snap happened; `possession_home`
+    and `yards_to_endzone` describe the field *after* the play, which is what a
+    win-probability read after that play should use.
+    """
+    teams = teams_from_summary(data)
+    home_id = teams["home"]["id"]
+
+    drives = data.get("drives") or {}
+    drive_list = list(drives.get("previous") or [])
+    if drives.get("current"):
+        drive_list.append(drives["current"])
+
+    def is_home(team_ref):
+        team_id = (team_ref or {}).get("id")
+        return None if team_id is None else str(team_id) == home_id
+
+    plays, seen = [], set()
+    for drive in drive_list:
+        for play in drive.get("plays") or []:
+            if play.get("id") in seen:
+                continue
+            seen.add(play.get("id"))
+            start, end = play.get("start") or {}, play.get("end") or {}
+            after = end if end.get("team") else start
+            plays.append({
+                "id": play.get("id"),
+                "quarter": (play.get("period") or {}).get("number", 1),
+                "clock_seconds": _parse_clock((play.get("clock") or {}).get("displayValue")),
+                "text": (play.get("text") or "").strip(),
+                "type": (play.get("type") or {}).get("text", ""),
+                "home_score": int(play.get("homeScore", 0) or 0),
+                "away_score": int(play.get("awayScore", 0) or 0),
+                "scoring": bool(play.get("scoringPlay")),
+                "turnover": bool(play.get("isTurnover")),
+                "down_distance": start.get("downDistanceText") or None,
+                "offense_home": is_home(start.get("team")),
+                "possession_home": is_home(after.get("team")),
+                "yards_to_endzone": after.get("yardsToEndzone"),
+            })
+    return plays
 
 
 def _changed(a, b):
