@@ -197,8 +197,9 @@ def test_after_a_safety_the_scorer_gets_the_ball():
 
 def test_timeouts_keep_the_previous_field_state():
     plays = espn_feed.plays_from_summary(_pbp(
-        _p("run", "Rush", 0, 0, "2", ytez=40),
-        _p("to", "Timeout", 0, 0, "8", end_team="8", ytez=0),
+        _p("run", "Rush", 10, 3, "2", ytez=40),
+        _p("to", "Timeout", 0, 0, "8", end_team="8", ytez=0),   # ESPN sometimes zeroes the score here
     ))
+    assert (plays[1]["home_score"], plays[1]["away_score"]) == (10, 3)
     assert plays[1]["possession_home"] is True
     assert plays[1]["yards_to_endzone"] == 40

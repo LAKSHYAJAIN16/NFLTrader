@@ -218,9 +218,10 @@ def plays_from_summary(data):
             away_score = int(play.get("awayScore", 0) or 0)
 
             if play_type in NON_ACTION_PLAY_TYPES:
-                # timeouts / end-of-period rows don't move the ball, but ESPN
-                # stamps them with stale or goal-line end states
+                # timeouts / end-of-period rows don't move the ball or the score, but
+                # ESPN stamps them with stale or goal-line end states (and sometimes 0-0)
                 possession_home, yards_to_endzone = prev["possession_home"], prev["yards_to_endzone"]
+                home_score, away_score = prev["home_score"], prev["away_score"]
             elif play.get("scoringPlay"):
                 # ESPN leaves the scorer "in possession" at the goal line; really the
                 # other side is about to receive (the scorer, after a safety)
