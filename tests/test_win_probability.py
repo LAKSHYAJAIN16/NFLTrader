@@ -30,3 +30,14 @@ def test_possession_nudges_win_prob():
     wp_with_ball = live_home_win_prob(0.5, 14, 14, 4, 300, possession_home=True)
     wp_without_ball = live_home_win_prob(0.5, 14, 14, 4, 300, possession_home=False)
     assert wp_with_ball > wp_without_ball
+
+
+def test_decided_when_no_time_left_and_not_tied():
+    # a 10-pt final with an underdog prior must still resolve to the winner
+    assert live_home_win_prob(0.3, 41, 31, quarter=4, clock_seconds=0) > 0.99
+    assert live_home_win_prob(0.7, 31, 41, quarter=4, clock_seconds=0) < 0.01
+
+
+def test_tied_at_end_of_regulation_is_not_decided():
+    p = live_home_win_prob(0.6, 20, 20, quarter=4, clock_seconds=0)
+    assert 0.01 < p < 0.99

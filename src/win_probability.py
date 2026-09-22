@@ -43,6 +43,10 @@ def live_home_win_prob(pregame_home_prob, home_score, away_score, quarter, clock
     score_weight = config.WP_SCORE_WEIGHT_MAX * time_frac_elapsed
 
     score_diff = home_score - away_score
+    if secs_left == 0 and score_diff != 0:
+        # no time left and not tied: the game is decided
+        return 0.999 if score_diff > 0 else 0.001
+
     # normalize: a two-score (~16 pt) lead is treated as ~ decisive once weighted in
     score_component = _sigmoid(score_diff / 8.0)
 
