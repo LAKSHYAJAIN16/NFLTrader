@@ -4,256 +4,630 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NFLTrader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0b0e14;
-    --panel: #131722;
-    --border: #232838;
-    --text: #e6e9ef;
-    --muted: #8b93a7;
-    --home: #4f8cff;
-    --away: #ff6b6b;
-    --good: #3ecf8e;
-    --bad: #ff6b6b;
+    --bg: #0a0d13;
+    --surface: #121722;
+    --surface-2: #192030;
+    --line: #242b3b;
+    --text: #e8ebf2;
+    --muted: #9aa3b8;
+    --faint: #8089a0;
+    --home: #5b95ff;
+    --away: #ff7373;
+    --live: #3fdc97;
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  html { scrollbar-color: var(--line) transparent; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: 24px;
+    font: 15px/1.45 Barlow, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
-  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  ::selection { background: color-mix(in srgb, var(--home) 45%, transparent); color: #fff; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--home); outline-offset: 2px; border-radius: 6px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .brand, .team-id .ab, .team-block .score, .game .side, .swing.big { font-family: "Barlow Semi Condensed", Barlow, sans-serif; }
+
+  /* ---------- frame ---------- */
+  .top {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 22px 28px 18px;
+  }
+  .brand { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .tagline { color: var(--muted); font-size: 13px; }
+  .layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr) 272px;
+    gap: 20px;
+    padding: 0 28px 40px;
+    align-items: start;
+  }
   .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 18px;
-    margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
   }
-  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
-  select, button {
-    background: #1b2130; color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px; font-size: 14px;
+  .panel-title { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0; }
+
+  /* ---------- slate ---------- */
+  .slate { position: sticky; top: 16px; padding: 16px 0 8px; max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .slate > .panel-title { padding: 0 16px 10px; }
+  .slate-list { overflow-y: auto; padding: 0 8px; }
+  .day { margin: 0 0 10px; }
+  .day h3 { font-size: 12px; font-weight: 600; color: var(--faint); margin: 10px 8px 6px; }
+  .game {
+    width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px;
+    padding: 9px 10px; margin-bottom: 2px;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    text-align: left; cursor: pointer;
+    transition: background-color .2s var(--ease-out), border-color .2s var(--ease-out);
   }
-  button { cursor: pointer; }
-  button:hover { border-color: var(--home); }
-  .picker-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .scoreline { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px; }
-  .team { font-size: 28px; font-weight: 600; }
-  .team.away { color: var(--away); text-align: left; }
-  .team.home { color: var(--home); text-align: right; }
-  .meta { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 14px; }
-  .wp-bar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
-  .wp-bar .away-fill { background: var(--away); display: flex; align-items: center; justify-content: flex-start; padding-left: 10px; font-weight: 600; transition: width .4s ease; }
-  .wp-bar .home-fill { background: var(--home); display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; font-weight: 600; transition: width .4s ease; }
-  canvas { width: 100%; height: 90px; display: block; margin-top: 14px; }
-  #insights { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
-  #insights li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  #insights li:last-child { border-bottom: none; }
-  #insights .ts { color: var(--muted); font-size: 11px; margin-right: 6px; }
-  .stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .stat-row:last-child { border-bottom: none; }
-  .stat-row .v { font-weight: 600; }
-  .v.pos { color: var(--good); }
-  .v.neg { color: var(--bad); }
-  .empty { color: var(--muted); font-size: 13px; }
-  .error { color: var(--bad); font-size: 13px; }
-  .position { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
-  .position:last-child { border-bottom: none; }
-  .position .q { color: var(--muted); }
+  .game:hover { background: var(--surface-2); }
+  .game[aria-current="true"] { background: var(--surface-2); border-color: var(--line); }
+  .game .side { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .game .side .nm { color: var(--muted); font-weight: 400; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+  .game .sc { text-align: right; font-weight: 600; font-size: 14px; }
+  .game .sc.lead { color: var(--text); }
+  .game .sc.trail { color: var(--faint); }
+  .game .when { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .game .when .d { display: none; }
+  .game .pick { color: var(--faint); }
+  .live-tag { color: var(--live); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .live-tag::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live);
+    animation: pulse 1.6s var(--ease-out) infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 60%, transparent); }
+    100% { box-shadow: 0 0 0 7px transparent; }
+  }
+
+  /* ---------- game ---------- */
+  .game-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .board { padding: 22px 24px 18px; }
+  .matchup { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+  .team-block { display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .team-block.home { flex-direction: row-reverse; text-align: right; }
+  .team-id { min-width: 0; }
+  .team-id .ab { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .team-id .full { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .team-block .score { font-size: 48px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .away .ab { color: var(--away); }
+  .home .ab { color: var(--home); }
+  .score.trail { color: var(--faint); }
+  .status { text-align: center; min-width: 150px; }
+  .status .main { font-weight: 600; font-size: 15px; }
+  .status .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .wp { margin-top: 22px; }
+  .wp-labels { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; }
+  .wp-labels .lbl { color: var(--muted); }
+  .wp-labels strong { font-weight: 700; font-size: 15px; }
+  .wp-labels .a strong { color: var(--away); }
+  .wp-labels .h strong { color: var(--home); }
+  .wp-track { position: relative; height: 10px; border-radius: 5px; background: var(--away); overflow: hidden; }
+  .wp-fill {
+    position: absolute; inset: 0; background: var(--home);
+    transform-origin: right center; transform: scaleX(.5);
+    transition: transform .6s var(--ease-out);
+  }
+  .wp-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--surface); }
+
+  .chart-wrap { position: relative; margin-top: 18px; }
+  .chart { display: block; width: 100%; height: 150px; overflow: visible; }
+  .chart text { fill: var(--faint); font-size: 11px; font-family: inherit; }
+  .chart-empty {
+    position: absolute; inset: 0 0 18px; display: grid; place-items: center;
+    color: var(--muted); font-size: 13px; pointer-events: none;
+  }
+
+  /* ---------- feed ---------- */
+  .feed { padding: 16px 0 6px; }
+  .feed-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px 12px; border-bottom: 1px solid var(--line); }
+  .feed-head .panel-title { display: flex; align-items: center; gap: 10px; }
+  .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .seg button {
+    background: transparent; border: 0; border-radius: 6px; padding: 4px 10px;
+    font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+  .plays { list-style: none; margin: 0; padding: 0; max-height: min(68vh, 760px); overflow-y: auto; }
+  .q-head {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface); padding: 12px 20px 6px;
+    font-size: 12px; font-weight: 600; color: var(--faint);
+  }
+  .play {
+    display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; gap: 14px;
+    padding: 11px 20px; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+    font-size: 14px;
+  }
+  .q-head + .play { border-top: 0; }
+  .play .t { color: var(--muted); font-size: 13px; padding-top: 1px; }
+  .play .dd { color: var(--faint); font-size: 12px; margin-bottom: 2px; }
+  .play .txt { overflow-wrap: anywhere; }
+  .play .tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; background: var(--surface-2); color: var(--text); }
+  .tag.to { color: #ffc861; }
+  .play.scoring { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+  .play.scoring .txt { font-weight: 600; }
+  .play.minor { padding-top: 7px; padding-bottom: 7px; }
+  .play.minor .txt { color: var(--faint); font-size: 13px; }
+  .swing { text-align: right; font-size: 13px; font-weight: 600; white-space: nowrap; padding-top: 1px; }
+  .swing.home { color: var(--home); }
+  .swing.away { color: var(--away); }
+  .swing.big { font-size: 15px; }
+  .play.fresh { animation: arrive 1.8s var(--ease-out); }
+  @keyframes arrive {
+    0% { opacity: 0; transform: translateY(-6px); background: color-mix(in srgb, var(--live) 18%, transparent); }
+    25% { opacity: 1; transform: none; }
+    100% { background: transparent; }
+  }
+  .feed-empty { padding: 36px 24px 40px; text-align: center; color: var(--muted); font-size: 14px; }
+  .feed-empty strong { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; }
+  .banner { margin: 12px 20px 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--away) 12%, var(--surface)); color: #ffb3b3; font-size: 13px; }
+  .banner button, .retry { margin-left: 8px; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+
+  /* ---------- portfolio ---------- */
+  .side-col { position: sticky; top: 16px; padding: 16px 18px; }
+  .stat { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--line); }
+  .stat:last-of-type { border-bottom: 0; }
+  .stat span:first-child { color: var(--muted); }
+  .stat .v { font-weight: 600; }
+  .v.pos { color: var(--live); }
+  .v.neg { color: var(--away); }
+  .side-col h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 6px; }
+  .position { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .position .q { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .fineprint { color: var(--faint); font-size: 12px; margin-top: 14px; }
+
+  .skeleton { height: 54px; margin: 4px 8px; border-radius: 8px; background: var(--surface-2); opacity: .5; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: 260px minmax(0, 1fr); }
+    .side-col { position: static; grid-column: 2; }
+  }
+  @media (max-width: 760px) {
+    .top { padding: 16px 16px 12px; }
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 0 16px 32px; }
+    .side-col { grid-column: auto; }
+    .slate { position: static; max-height: none; padding: 12px 0; }
+    .slate-list { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 4px; scroll-snap-type: x proximity; }
+    .day { display: contents; }
+    .day h3 { display: none; }
+    .game { flex: none; width: 190px; border-color: var(--line); scroll-snap-align: start; }
+    .game .when .d { display: inline; }
+    .board { padding: 18px 16px 14px; }
+    .matchup { grid-template-columns: 1fr 1fr; }
+    .status { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+    .team-block { gap: 10px; }
+    .team-id .ab { font-size: 22px; }
+    .team-id .full { display: none; }
+    .team-block .score { font-size: 38px; }
+    .feed-head { padding: 0 16px 12px; }
+    .play { grid-template-columns: 48px minmax(0, 1fr); gap: 4px 10px; padding: 10px 16px; }
+    .play .swing { grid-column: 2; text-align: left; padding: 0; }
+    .q-head { padding: 12px 16px 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
-  <h1>NFLTrader</h1>
-  <div class="subtitle">Live win probability vs. Polymarket -- paper trades only, no real money.</div>
+  <header class="top">
+    <h1 class="brand">NFLTrader</h1>
+    <span class="tagline">Live win probability vs. Polymarket. Paper trades only, no real money.</span>
+  </header>
 
-  <div class="grid">
-    <div>
-      <div class="panel">
-        <h2>Live game</h2>
-        <div class="picker-row">
-          <select id="game-picker"><option value="">Loading scoreboard...</option></select>
-          <button id="watch-btn">Watch</button>
-          <span id="game-status" class="empty"></span>
+  <div class="layout">
+    <nav class="slate panel" aria-label="This week's games">
+      <h2 class="panel-title">This week</h2>
+      <div class="slate-list" id="slate">
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
+    </nav>
+
+    <main class="game-col">
+      <section class="board panel" aria-live="polite">
+        <div class="matchup">
+          <div class="team-block away">
+            <div class="team-id"><div class="ab" id="away-abbr">--</div><div class="full" id="away-name"></div></div>
+            <div class="score num" id="away-score"></div>
+          </div>
+          <div class="status">
+            <div class="main" id="status-main">Loading...</div>
+            <div class="sub num" id="status-sub"></div>
+          </div>
+          <div class="team-block home">
+            <div class="team-id"><div class="ab" id="home-abbr">--</div><div class="full" id="home-name"></div></div>
+            <div class="score num" id="home-score"></div>
+          </div>
         </div>
 
-        <div id="game-view" style="display:none">
-          <div class="scoreline">
-            <div class="team away"><span id="away-abbr"></span> <span id="away-score"></span></div>
-            <div class="team home"><span id="home-score"></span> <span id="home-abbr"></span></div>
+        <div class="wp">
+          <div class="wp-labels num">
+            <span class="a"><strong id="away-pct">--</strong> <span class="lbl" id="away-pct-lbl"></span></span>
+            <span class="lbl" id="wp-caption">Model win probability</span>
+            <span class="h"><span class="lbl" id="home-pct-lbl"></span> <strong id="home-pct">--</strong></span>
           </div>
-          <div class="meta" id="game-meta"></div>
-          <div class="wp-bar">
-            <div class="away-fill" id="away-fill">0%</div>
-            <div class="home-fill" id="home-fill">0%</div>
+          <div class="wp-track" role="img" id="wp-track" aria-label="Win probability">
+            <div class="wp-fill" id="wp-fill"></div>
+            <div class="wp-mid"></div>
           </div>
-          <canvas id="wp-chart" width="600" height="90"></canvas>
         </div>
-      </div>
 
-      <div class="panel">
-        <h2>Insight feed</h2>
-        <ul id="insights"><li class="empty">Pick a game and hit Watch.</li></ul>
-      </div>
-    </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="chart" aria-hidden="true"></svg>
+          <div class="chart-empty" id="chart-empty" hidden></div>
+        </div>
+      </section>
 
-    <div>
-      <div class="panel">
-        <h2>Paper portfolio</h2>
-        <div class="stat-row"><span>Bankroll</span><span class="v" id="bankroll">--</span></div>
-        <div class="stat-row"><span>Open positions</span><span class="v" id="open-positions">--</span></div>
-        <div class="stat-row"><span>Settled (W-L)</span><span class="v" id="record">--</span></div>
-        <div class="stat-row"><span>Realized P&amp;L</span><span class="v" id="pnl">--</span></div>
-      </div>
-      <div class="panel">
-        <h2>Open positions</h2>
-        <div id="positions"><div class="empty">None</div></div>
-      </div>
-    </div>
+      <section class="feed panel" aria-label="Play-by-play">
+        <div class="feed-head">
+          <h2 class="panel-title">Play-by-play <span id="feed-live"></span></h2>
+          <div class="seg" role="group" aria-label="Filter plays">
+            <button type="button" data-filter="all" aria-pressed="true">All plays</button>
+            <button type="button" data-filter="key" aria-pressed="false">Key plays</button>
+          </div>
+        </div>
+        <div id="feed-banner"></div>
+        <ol class="plays" id="plays"></ol>
+      </section>
+    </main>
+
+    <aside class="side-col panel" aria-label="Paper portfolio">
+      <h2 class="panel-title">Paper portfolio</h2>
+      <div class="stat"><span>Bankroll</span><span class="v num" id="bankroll">--</span></div>
+      <div class="stat"><span>Open positions</span><span class="v num" id="open-positions">--</span></div>
+      <div class="stat"><span>Settled (W-L)</span><span class="v num" id="record">--</span></div>
+      <div class="stat"><span>Realized P&amp;L</span><span class="v num" id="pnl">--</span></div>
+      <h3>Open positions</h3>
+      <div id="positions"><div class="muted">None</div></div>
+    </aside>
   </div>
 
 <script>
-const POLL_GAME_MS = 5000;
-const POLL_STATUS_MS = 10000;
-let watching = null; // {home, away}
+const POLL_LIVE_MS = 5000;
+const POLL_PRE_MS = 60000;
+const POLL_SLATE_MS = 60000;
+const POLL_STATUS_MS = 15000;
+const KEY_SWING = 0.05;      // a play that moves win probability 5+ pts is a key play
+const SHOWN_SWING = 0.005;   // below half a point, the swing is noise
+
+const $ = id => document.getElementById(id);
+let games = [];
+let selectedId = null;
+let game = null;              // last /api/game payload for selectedId
+let seenPlayIds = new Set();
+let filter = "all";
 let gameTimer = null;
 
 async function fetchJSON(url) {
   const r = await fetch(url);
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || r.statusText);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `${r.status} ${r.statusText}`);
   return data;
 }
 
-async function loadScoreboard() {
-  const picker = document.getElementById("game-picker");
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+const fmtTime = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const fmtDayShort = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const fmtDayLong = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" });
+
+function pct(p) { return Math.round(p * 100) + "%"; }
+function clock(q, secs) {
+  const m = Math.floor(secs / 60), s = String(secs % 60).padStart(2, "0");
+  return `${q >= 5 ? "OT" : "Q" + q} ${m}:${s}`;
+}
+function quarterName(q) { return q >= 5 ? "Overtime" : ["1st", "2nd", "3rd", "4th"][q - 1] + " quarter"; }
+function untilKickoff(iso) {
+  const ms = new Date(iso) - Date.now();
+  if (ms <= 0) return "any minute";
+  const mins = Math.round(ms / 60000), h = Math.floor(mins / 60), d = Math.floor(h / 24);
+  if (d >= 1) return `in ${d}d ${h % 24}h`;
+  if (h >= 1) return `in ${h}h ${mins % 60}m`;
+  return `in ${mins}m`;
+}
+
+/* ---------------- slate ---------------- */
+
+async function loadSlate() {
   try {
-    const games = await fetchJSON("/api/scoreboard");
-    if (!games.length) {
-      picker.innerHTML = '<option value="">No games on the board right now</option>';
-      return;
-    }
-    picker.innerHTML = games.map(g =>
-      `<option value="${g.home_abbr}|${g.away_abbr}">${g.away_name} @ ${g.home_name} -- ${g.status}</option>`
-    ).join("");
+    games = await fetchJSON("/api/scoreboard");
   } catch (e) {
-    picker.innerHTML = '<option value="">Scoreboard unavailable</option>';
-    document.getElementById("game-status").textContent = e.message;
+    if (!games.length) $("slate").innerHTML = `<p class="muted" style="padding:0 8px">Couldn't load this week's games (${esc(e.message)}). <button class="retry" onclick="loadSlate()">Retry</button></p>`;
+    return;
+  }
+  games.sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
+  renderSlate();
+  if (!selectedId) {
+    // a #game=<id> link opens that game even if it's not on this week's slate
+    const fromHash = new URLSearchParams(location.hash.slice(1)).get("game");
+    if (fromHash) return selectGame(fromHash);
+    const pick = games.find(g => g.state === "in")
+      || games.find(g => g.state === "pre")
+      || games[0];
+    if (pick) selectGame(pick.event_id);
+    else $("status-main").textContent = "No games on the schedule";
   }
 }
 
-function fmtClock(state) {
-  const m = Math.floor(state.clock_seconds / 60);
-  const s = String(state.clock_seconds % 60).padStart(2, "0");
-  const q = state.quarter >= 5 ? "OT" : `Q${state.quarter}`;
-  return `${q} ${m}:${s}`;
+function renderSlate() {
+  if (!games.length) { $("slate").innerHTML = '<p class="muted" style="padding:0 8px">No games on the schedule this week.</p>'; return; }
+  const byDay = new Map();
+  for (const g of games) {
+    const key = new Date(g.kickoff).toDateString();
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(g);
+  }
+  $("slate").innerHTML = [...byDay.values()].map(list => `
+    <section class="day">
+      <h3>${esc(fmtDayLong.format(new Date(list[0].kickoff)))}</h3>
+      ${list.map(slateRow).join("")}
+    </section>`).join("");
 }
 
-function drawChart(history) {
-  const canvas = document.getElementById("wp-chart");
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  if (history.length < 2) return;
-
-  ctx.strokeStyle = "#232838";
-  ctx.beginPath();
-  ctx.moveTo(0, h / 2);
-  ctx.lineTo(w, h / 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#4f8cff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  history.forEach((pt, i) => {
-    const x = (i / (history.length - 1)) * w;
-    const y = h - (pt.wp * h);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+function slateRow(g) {
+  const started = g.state !== "pre";
+  const side = (abbr, name, color, score, other) => `
+    <span class="side"><span class="dot" style="background:#${esc(color || "555")}"></span>${esc(abbr)} <span class="nm">${esc(name)}</span></span>
+    <span class="sc num ${started ? (score >= other ? "lead" : "trail") : ""}">${started ? score : ""}</span>`;
+  const favHome = g.pregame_home_prob >= 0.5;
+  const pick = `${favHome ? g.home_abbr : g.away_abbr} ${pct(favHome ? g.pregame_home_prob : 1 - g.pregame_home_prob)}`;
+  let when;
+  if (g.state === "in") when = `<span class="live-tag num">${esc(g.status)}</span>`;
+  else if (g.state === "post") when = `<span>${esc(g.status)}</span>`;
+  else when = `<span class="num"><span class="d">${esc(fmtDayShort.format(new Date(g.kickoff)))} </span>${esc(fmtTime.format(new Date(g.kickoff)))}</span>`;
+  return `
+    <button type="button" class="game" data-id="${esc(g.event_id)}" aria-current="${g.event_id === selectedId}">
+      ${side(g.away_abbr, g.away_name, g.away_color, g.away_score, g.home_score)}
+      ${side(g.home_abbr, g.home_name, g.home_color, g.home_score, g.away_score)}
+      <span class="when">${when}<span class="pick num" title="Model's pregame pick">${esc(pick)}</span></span>
+    </button>`;
 }
 
-function addInsight(text) {
-  const list = document.getElementById("insights");
-  if (list.querySelector(".empty")) list.innerHTML = "";
-  const li = document.createElement("li");
-  const ts = new Date().toLocaleTimeString();
-  li.innerHTML = `<span class="ts">${ts}</span>${text}`;
-  list.prepend(li);
-  while (list.children.length > 50) list.removeChild(list.lastChild);
+$("slate").addEventListener("click", e => {
+  const btn = e.target.closest(".game");
+  if (btn) selectGame(btn.dataset.id);
+});
+
+/* ---------------- game ---------------- */
+
+function selectGame(id) {
+  if (id !== selectedId) {
+    selectedId = id;
+    game = null;
+    seenPlayIds = new Set();
+    history.replaceState(null, "", "#game=" + encodeURIComponent(id));
+    document.querySelectorAll(".game").forEach(b => b.setAttribute("aria-current", String(b.dataset.id === id)));
+    $("plays").innerHTML = "";
+    $("feed-banner").innerHTML = "";
+    const g = games.find(x => x.event_id === id);
+    if (g) previewFromSlate(g);
+  }
+  pollGame();
+}
+
+function previewFromSlate(g) {
+  $("away-abbr").textContent = g.away_abbr; $("away-name").textContent = g.away_name;
+  $("home-abbr").textContent = g.home_abbr; $("home-name").textContent = g.home_name;
+  $("status-main").textContent = "Loading...";
+  $("status-sub").textContent = "";
+}
+
+function schedule(ms) {
+  clearTimeout(gameTimer);
+  if (ms) gameTimer = setTimeout(pollGame, ms);
 }
 
 async function pollGame() {
-  if (!watching) return;
+  const id = selectedId;
+  if (!id) return;
   try {
-    const g = await fetchJSON(`/api/game?home=${watching.home}&away=${watching.away}`);
-    document.getElementById("game-view").style.display = "block";
-    document.getElementById("game-status").textContent = "";
-    document.getElementById("home-abbr").textContent = g.home_abbr;
-    document.getElementById("away-abbr").textContent = g.away_abbr;
-    document.getElementById("home-score").textContent = g.home_score;
-    document.getElementById("away-score").textContent = g.away_score;
-    document.getElementById("game-meta").textContent = fmtClock(g) +
-      (g.possession_home === true ? ` -- ${g.home_abbr} ball` :
-       g.possession_home === false ? ` -- ${g.away_abbr} ball` : "");
-
-    const homePct = Math.round(g.win_prob_home * 100);
-    const awayPct = 100 - homePct;
-    document.getElementById("home-fill").style.width = homePct + "%";
-    document.getElementById("away-fill").style.width = awayPct + "%";
-    document.getElementById("home-fill").textContent = homePct + "%";
-    document.getElementById("away-fill").textContent = awayPct + "%";
-
-    drawChart(g.history);
-    if (g.insight) addInsight(g.insight);
+    const g = await fetchJSON(`/api/game?event_id=${encodeURIComponent(id)}`);
+    if (id !== selectedId) return;
+    $("feed-banner").innerHTML = "";
+    game = g;
+    renderGame(g);
+    const kickoffPassed = new Date(g.kickoff) <= Date.now();
+    schedule(g.state === "in" || (g.state === "pre" && kickoffPassed) ? POLL_LIVE_MS
+           : g.state === "pre" ? POLL_PRE_MS : null);
   } catch (e) {
-    document.getElementById("game-status").textContent = e.message;
+    if (id !== selectedId) return;
+    $("feed-banner").innerHTML = `<div class="banner">Can't reach the game feed: ${esc(e.message)}. Retrying in a few seconds.</div>`;
+    if (!game) $("status-main").textContent = "Game unavailable";
+    schedule(POLL_LIVE_MS * 2);
   }
 }
 
-document.getElementById("watch-btn").addEventListener("click", () => {
-  const val = document.getElementById("game-picker").value;
-  if (!val) return;
-  const [home, away] = val.split("|");
-  watching = { home, away };
-  document.getElementById("insights").innerHTML = '<li class="empty">Watching...</li>';
-  if (gameTimer) clearInterval(gameTimer);
-  pollGame();
-  gameTimer = setInterval(pollGame, POLL_GAME_MS);
+function renderGame(g) {
+  const { home, away } = g;
+  const started = g.state !== "pre";
+  $("away-abbr").textContent = away.abbr; $("away-name").textContent = away.name;
+  $("home-abbr").textContent = home.abbr; $("home-name").textContent = home.name;
+  $("away-score").textContent = started ? away.score : "";
+  $("home-score").textContent = started ? home.score : "";
+  $("away-score").classList.toggle("trail", started && away.score < home.score);
+  $("home-score").classList.toggle("trail", started && home.score < away.score);
+
+  const main = $("status-main"), sub = $("status-sub");
+  if (g.state === "in") {
+    main.innerHTML = `<span class="live-tag num">${esc(clock(g.quarter, g.clock_seconds))}</span>`;
+    const ball = g.possession_home === true ? home.abbr : g.possession_home === false ? away.abbr : null;
+    sub.textContent = [ball && `${ball} ball`, g.down_distance].filter(Boolean).join(" · ") || g.status;
+  } else if (g.state === "post") {
+    main.textContent = g.status || "Final";
+    sub.textContent = fmtDayLong.format(new Date(g.kickoff));
+  } else {
+    const k = new Date(g.kickoff);
+    main.textContent = `${fmtDayShort.format(k)} ${fmtTime.format(k)}`;
+    sub.textContent = `Kickoff ${untilKickoff(g.kickoff)}`;
+  }
+
+  const wp = g.win_prob_home;
+  $("wp-fill").style.transform = `scaleX(${wp})`;
+  $("home-pct").textContent = pct(wp); $("away-pct").textContent = pct(1 - wp);
+  $("home-pct-lbl").textContent = home.abbr; $("away-pct-lbl").textContent = away.abbr;
+  $("wp-caption").textContent = g.state === "pre" ? "Model pregame pick" : g.state === "post" ? "Model, at the final whistle" : "Model win probability, live";
+  $("wp-track").setAttribute("aria-label", `${home.abbr} ${pct(wp)}, ${away.abbr} ${pct(1 - wp)}`);
+  $("feed-live").innerHTML = g.state === "in" ? '<span class="live-tag">Live</span>' : "";
+
+  drawChart(g);
+  renderPlays(g);
+}
+
+function elapsed(p) {
+  return p.quarter <= 4 ? (p.quarter - 1) * 900 + (900 - p.clock_seconds) : 3600 + (600 - p.clock_seconds);
+}
+
+function drawChart(g) {
+  // drawn at the real pixel width (and redrawn on resize) so labels never stretch
+  const W = Math.max(280, Math.round($("chart").getBoundingClientRect().width)), H = 150, top = 8, bottom = 22, ph = H - top - bottom;
+  const plays = g.plays.filter(p => !p.minor || p.type === "End of Game");
+  const maxT = Math.max(3600, ...plays.map(elapsed));
+  const x = t => (t / maxT) * W;
+  const y = wp => top + (1 - wp) * ph;
+  const css = getComputedStyle(document.documentElement);
+  const homeC = css.getPropertyValue("--home").trim(), awayC = css.getPropertyValue("--away").trim();
+
+  let svg = `
+    <defs>
+      <clipPath id="above"><rect x="0" y="0" width="${W}" height="${y(0.5)}"/></clipPath>
+      <clipPath id="below"><rect x="0" y="${y(0.5)}" width="${W}" height="${H}"/></clipPath>
+    </defs>`;
+  const quarters = maxT > 3600 ? [0, 900, 1800, 2700, 3600] : [0, 900, 1800, 2700];
+  quarters.forEach((t, i) => {
+    const qx = x(t);
+    if (i) svg += `<line x1="${qx}" x2="${qx}" y1="${top}" y2="${top + ph}" stroke="var(--line)" stroke-width="1"/>`;
+    svg += `<text x="${qx + 6}" y="${H - 6}">${i === 4 ? "OT" : "Q" + (i + 1)}</text>`;
+  });
+  svg += `<line x1="0" x2="${W}" y1="${y(0.5)}" y2="${y(0.5)}" stroke="var(--line)" stroke-dasharray="4 4"/>`;
+  svg += `<text x="${W - 4}" y="${y(0.5) - 5}" text-anchor="end">50%</text>`;
+
+  const pts = [[0, g.pregame_home_prob], ...plays.map(p => [elapsed(p), p.wp_home])];
+  const empty = $("chart-empty");
+  if (plays.length) {
+    const line = pts.map(([t, wp], i) => `${i ? "L" : "M"}${x(t).toFixed(1)},${y(wp).toFixed(1)}`).join("");
+    const last = pts[pts.length - 1];
+    const area = `${line}L${x(last[0]).toFixed(1)},${y(0.5)}L0,${y(0.5)}Z`;
+    svg += `<path d="${area}" fill="${homeC}" fill-opacity=".22" clip-path="url(#above)"/>`;
+    svg += `<path d="${area}" fill="${awayC}" fill-opacity=".22" clip-path="url(#below)"/>`;
+    svg += `<path d="${line}" fill="none" stroke="var(--text)" stroke-width="1.6" stroke-linejoin="round"/>`;
+    empty.hidden = true;
+  } else {
+    svg += `<line x1="0" x2="${W}" y1="${y(g.pregame_home_prob)}" y2="${y(g.pregame_home_prob)}" stroke="var(--home)" stroke-opacity=".5" stroke-dasharray="2 5"/>`;
+    empty.hidden = false;
+    empty.textContent = g.state === "pre" ? "The win-probability line draws itself here from kickoff." : "No plays reported yet.";
+  }
+  // scoring plays, colored by who scored
+  svg += plays.filter(p => p.scoring).map(p =>
+    `<circle cx="${x(elapsed(p)).toFixed(1)}" cy="${y(p.wp_home).toFixed(1)}" r="3.5" fill="${p.wp_delta >= 0 ? homeC : awayC}" stroke="var(--surface)" stroke-width="1.5"><title>${esc(p.text)}</title></circle>`
+  ).join("");
+  $("chart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("chart").innerHTML = svg;
+}
+
+new ResizeObserver(() => { if (game) drawChart(game); }).observe($("chart"));
+
+function isKey(p) { return !p.minor && (p.scoring || p.turnover || Math.abs(p.wp_delta) >= KEY_SWING); }
+
+function renderPlays(g) {
+  const list = $("plays");
+  if (!g.plays.length) {
+    list.innerHTML = "";
+    const k = new Date(g.kickoff);
+    $("feed-banner").innerHTML = g.state === "pre" ? `
+      <div class="feed-empty">
+        <strong>No snaps yet</strong>
+        ${esc(g.away.short_name)} at ${esc(g.home.short_name)} kicks off ${esc(fmtDayShort.format(k))} at ${esc(fmtTime.format(k))} (${esc(untilKickoff(g.kickoff))}).
+        Every play lands here as it happens, with how far it swung the model.
+      </div>` : `<div class="feed-empty"><strong>Waiting on the first play</strong>ESPN hasn't posted any plays for this game yet.</div>`;
+    return;
+  }
+  const firstRender = seenPlayIds.size === 0;
+  const shown = (filter === "key" ? g.plays.filter(isKey) : g.plays).slice().reverse();
+  let html = "", lastQ = null;
+  for (const p of shown) {
+    if (p.quarter !== lastQ) { html += `<li class="q-head" aria-hidden="true">${quarterName(p.quarter)}</li>`; lastQ = p.quarter; }
+    html += playRow(p, g, !firstRender && !seenPlayIds.has(p.id));
+  }
+  list.innerHTML = html || `<li class="feed-empty"><strong>No key plays yet</strong>Scores, turnovers and big swings show up here.</li>`;
+  g.plays.forEach(p => seenPlayIds.add(p.id));
+}
+
+function playRow(p, g, fresh) {
+  const d = p.wp_delta, mag = Math.abs(d);
+  let swing = `<span class="swing"></span>`;
+  if (!p.minor && mag >= SHOWN_SWING) {
+    const team = d > 0 ? g.home : g.away;
+    swing = `<span class="swing ${d > 0 ? "home" : "away"} ${mag >= KEY_SWING ? "big" : ""} num" title="${esc(team.abbr)} win probability ${pct(d > 0 ? p.wp_home : 1 - p.wp_home)} after this play">${esc(team.abbr)} +${(mag * 100).toFixed(1)}</span>`;
+  }
+  const tags = [];
+  if (p.scoring) tags.push(`<span class="tag num">${esc(g.away.abbr)} ${p.away_score} – ${p.home_score} ${esc(g.home.abbr)}</span>`);
+  if (p.turnover) tags.push(`<span class="tag to">Turnover</span>`);
+  const cls = ["play", p.scoring && "scoring", p.minor && "minor", fresh && "fresh"].filter(Boolean).join(" ");
+  return `
+    <li class="${cls}">
+      <span class="t num">${esc(clock(p.quarter, p.clock_seconds))}</span>
+      <div>
+        ${p.down_distance && !p.minor ? `<div class="dd">${esc(p.down_distance)}</div>` : ""}
+        <div class="txt">${esc(p.text)}</div>
+        ${tags.length ? `<div class="tags">${tags.join("")}</div>` : ""}
+      </div>
+      ${swing}
+    </li>`;
+}
+
+document.querySelector(".seg").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-filter]");
+  if (!btn) return;
+  filter = btn.dataset.filter;
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+  if (game) renderPlays(game);
 });
+
+/* ---------------- portfolio ---------------- */
 
 async function pollStatus() {
   try {
     const s = await fetchJSON("/api/status");
-    document.getElementById("bankroll").textContent = "$" + s.summary.bankroll.toFixed(2);
-    document.getElementById("open-positions").textContent = s.summary.open_positions;
-    document.getElementById("record").textContent = `${s.summary.wins}-${s.summary.losses}`;
+    $("bankroll").textContent = "$" + s.summary.bankroll.toFixed(2);
+    $("open-positions").textContent = s.summary.open_positions;
+    $("record").textContent = `${s.summary.wins}-${s.summary.losses}`;
     const pnl = s.summary.realized_pnl;
-    const pnlEl = document.getElementById("pnl");
-    pnlEl.textContent = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
-    pnlEl.className = "v " + (pnl >= 0 ? "pos" : "neg");
-
-    const posDiv = document.getElementById("positions");
-    if (!s.open_positions.length) {
-      posDiv.innerHTML = '<div class="empty">None</div>';
-    } else {
-      posDiv.innerHTML = s.open_positions.map(p => `
-        <div class="position">
-          <div>${p.side_team} @ ${p.entry_price.toFixed(2)} -- stake $${p.stake.toFixed(2)}</div>
-          <div class="q">${p.question}</div>
-        </div>`).join("");
-    }
+    $("pnl").textContent = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
+    $("pnl").className = "v num " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "");
+    $("positions").innerHTML = s.open_positions.length ? s.open_positions.map(p => `
+      <div class="position">
+        <div class="num">${esc(p.side_team)} @ ${p.entry_price.toFixed(2)} · $${p.stake.toFixed(2)}</div>
+        <div class="q">${esc(p.question)}</div>
+      </div>`).join("") : '<div class="muted">None</div>';
   } catch (e) {
     // portfolio state file may not exist yet - not fatal
   }
 }
 
-loadScoreboard();
+// keep the kickoff countdown honest between polls
+setInterval(() => { if (game && game.state === "pre") renderGame(game); }, 30000);
+
+loadSlate();
+setInterval(loadSlate, POLL_SLATE_MS);
 pollStatus();
 setInterval(pollStatus, POLL_STATUS_MS);
 </script>
