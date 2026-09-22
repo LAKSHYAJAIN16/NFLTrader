@@ -73,8 +73,9 @@ def test_game_502s_when_espn_fails(client, monkeypatch):
 
 
 def test_game_returns_play_by_play_with_win_prob_swings(client, monkeypatch):
-    plays = [_play("1", "P.Mahomes 12 yd run", 0, 0),
-             _play("2", "P.Mahomes pass to T.Kelce for TD", 7, 0, clock="6:00", scoring=True)]
+    # late and close, where a score should clearly move the needle
+    plays = [_play("1", "P.Mahomes 12 yd run", 17, 17, quarter=4, clock="3:00"),
+             _play("2", "P.Mahomes pass to T.Kelce for TD", 24, 17, quarter=4, clock="2:10", scoring=True)]
     monkeypatch.setattr(web_app.espn_feed, "read_summary", lambda event_id: _summary(plays=plays))
 
     body = client.get("/api/game?event_id=1").get_json()

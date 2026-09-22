@@ -47,6 +47,10 @@ NON_ACTION_PLAY_TYPES = {"End Period", "End of Half", "End of Game", "Timeout",
                          "Official Timeout", "Two-minute warning"}
 
 
+# Typical drive start after a kickoff (touchback at the 30/35, or a return).
+POST_SCORE_YARDS_TO_ENDZONE = 70
+
+
 def to_elo_abbr(espn_abbr):
     return _ELO_ABBR.get(espn_abbr, espn_abbr)
 
@@ -201,6 +205,7 @@ def plays_from_summary(data):
         return None if team_id is None else str(team_id) == home_id
 
     plays, seen = [], set()
+    prev = {"home_score": 0, "away_score": 0, "possession_home": None, "yards_to_endzone": None}
     for drive in drive_list:
         for play in drive.get("plays") or []:
             if play.get("id") in seen:
@@ -208,21 +213,41 @@ def plays_from_summary(data):
             seen.add(play.get("id"))
             start, end = play.get("start") or {}, play.get("end") or {}
             after = end if end.get("team") else start
-            plays.append({
+            play_type = (play.get("type") or {}).get("text", "")
+            home_score = int(play.get("homeScore", 0) or 0)
+            away_score = int(play.get("awayScore", 0) or 0)
+
+            if play_type in NON_ACTION_PLAY_TYPES:
+                # timeouts / end-of-period rows don't move the ball, but ESPN
+                # stamps them with stale or goal-line end states
+                possession_home, yards_to_endzone = prev["possession_home"], prev["yards_to_endzone"]
+            elif play.get("scoringPlay"):
+                # ESPN leaves the scorer "in possession" at the goal line; really the
+                # other side is about to receive (the scorer, after a safety)
+                home_scored = home_score - prev["home_score"] > away_score - prev["away_score"]
+                safety = abs((home_score + away_score) - (prev["home_score"] + prev["away_score"])) == 2
+                possession_home = home_scored if safety else not home_scored
+                yards_to_endzone = POST_SCORE_YARDS_TO_ENDZONE
+            else:
+                possession_home, yards_to_endzone = is_home(after.get("team")), after.get("yardsToEndzone")
+
+            entry = {
                 "id": play.get("id"),
                 "quarter": (play.get("period") or {}).get("number", 1),
                 "clock_seconds": _parse_clock((play.get("clock") or {}).get("displayValue")),
                 "text": (play.get("text") or "").strip(),
-                "type": (play.get("type") or {}).get("text", ""),
-                "home_score": int(play.get("homeScore", 0) or 0),
-                "away_score": int(play.get("awayScore", 0) or 0),
+                "type": play_type,
+                "home_score": home_score,
+                "away_score": away_score,
                 "scoring": bool(play.get("scoringPlay")),
                 "turnover": bool(play.get("isTurnover")),
                 "down_distance": start.get("downDistanceText") or None,
                 "offense_home": is_home(start.get("team")),
-                "possession_home": is_home(after.get("team")),
-                "yards_to_endzone": after.get("yardsToEndzone"),
-            })
+                "possession_home": possession_home,
+                "yards_to_endzone": yards_to_endzone,
+            }
+            plays.append(entry)
+            prev = entry
     return plays
 
 

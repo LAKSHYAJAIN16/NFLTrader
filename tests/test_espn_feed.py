@@ -165,3 +165,40 @@ def test_plays_flatten_drives_and_track_possession_after_the_play():
     assert kickoff["offense_home"] is False and kickoff["possession_home"] is True
     assert plays[1]["clock_seconds"] == 14 * 60 + 51
     assert plays[1]["down_distance"] == "1st & 10 at BUF 25"
+
+
+def _pbp(*plays):
+    return dict(LIVE_SUMMARY, drives={"previous": [{"plays": list(plays)}]})
+
+
+def _p(pid, type_, home, away, offense, scoring=False, end_team=None, ytez=None):
+    return {"id": pid, "text": pid, "type": {"text": type_}, "scoringPlay": scoring,
+            "homeScore": home, "awayScore": away, "period": {"number": 1}, "clock": {"displayValue": "9:09"},
+            "start": {"team": {"id": offense}}, "end": {"team": {"id": end_team or offense}, "yardsToEndzone": ytez}}
+
+
+def test_after_a_score_the_other_side_is_due_the_ball():
+    plays = espn_feed.plays_from_summary(_pbp(
+        _p("run", "Rush", 0, 0, "2", ytez=5),
+        _p("td", "Rushing Touchdown", 7, 0, "2", scoring=True, ytez=0),
+    ))
+    td = plays[1]
+    assert td["offense_home"] is True
+    assert td["possession_home"] is False                     # DET receives the kickoff
+    assert td["yards_to_endzone"] == espn_feed.POST_SCORE_YARDS_TO_ENDZONE
+
+
+def test_after_a_safety_the_scorer_gets_the_ball():
+    plays = espn_feed.plays_from_summary(_pbp(
+        _p("sfty", "Safety", 0, 2, "2", scoring=True, ytez=100),
+    ))
+    assert plays[0]["possession_home"] is False                # away (DET) scored 2 and receives
+
+
+def test_timeouts_keep_the_previous_field_state():
+    plays = espn_feed.plays_from_summary(_pbp(
+        _p("run", "Rush", 0, 0, "2", ytez=40),
+        _p("to", "Timeout", 0, 0, "8", end_team="8", ytez=0),
+    ))
+    assert plays[1]["possession_home"] is True
+    assert plays[1]["yards_to_endzone"] == 40
