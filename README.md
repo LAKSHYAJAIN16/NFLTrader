@@ -82,44 +82,57 @@ python main.py live --market <polymarket_condition_id>                       # t
 python main.py live --source cv --video <path_or_url> --home KC --away SF    # CV/OCR instead of ESPN
 ```
 
-`trade-game` takes a full Polymarket URL or bare slug, logs every market it finds to `state/market_catalog.csv`, and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) since a $0-volume quote is a seeded default, not a real consensus. Player-prop markets aren't included -- they're rendered into Polymarket's page HTML rather than served from the public API.
+`trade-game` takes a full Polymarket URL or bare slug, logs every market it finds to `state/market_catalog.csv`, and skips trading (but still logs) anything under `MIN_MARKET_VOLUME` ($500 by default) since a $0-volume quote is a seeded default, not a real consensus. `trade-game` reads the main game-lines event only; the web dashboard also picks up the game's sibling events (player props, first TD scorer, highest-scoring quarter).
 
 ## Web dashboard
-```
-python main.py web                 # http://127.0.0.1:5000, local-only by default
-python main.py web --host 0.0.0.0  # also reachable from other devices on your network
-```
-A small Flask app (`web/app.py`) plus one static page (`web/static/index.html`, no build step, no
-npm) that wraps the same modules the CLI uses -- it does not duplicate any model logic. It's operational
-today as a **local dashboard only**: nothing is deployed to the internet, so the only way to "access it"
-is to run the command above on a machine with this repo and hit that URL yourself (or another device on
-your LAN, with `--host 0.0.0.0`). There is no public URL.
+A live trading desk for one game at a time: the week's slate, the game as it happens, and every
+Polymarket market for it priced by the model, with paper buys from the page.
 
-- Game picker sourced from ESPN's live scoreboard (`/api/scoreboard`)
-- Live win-probability bar + sparkline and the insight-narration feed for whichever game you pick
-  (`/api/game?home=..&away=..`, polled every 5s -- reuses `EloRatings`, `win_probability`, and
-  `InsightEngine` exactly as `main.py live` does)
-- Paper portfolio panel: bankroll, open positions, realized P&L (`/api/status`, polled every 10s,
-  reads the same `state/portfolio.json` the CLI writes)
+Quickstart (no accounts or API keys; ESPN and Polymarket's public APIs are keyless):
+```
+git clone <this repo> && cd NFLTrader
+pip install -r requirements-dashboard.txt   # just requests + flask; the full requirements.txt adds CV/audio extras
+python main.py web                          # http://127.0.0.1:5000, local-only by default
+python main.py web --host 0.0.0.0           # also reachable from other devices on your network
+```
+The first page load takes a few seconds: it downloads nflverse history once to fit Elo and the
+margin/total model, and scans Polymarket for the game's events.
+
+A small Flask app (`web/app.py`) plus one static page (`web/static/index.html`, no build step, no
+npm) that wraps the same modules the CLI uses. It's a **local dashboard only**: nothing is deployed to
+the internet; there is no public URL.
+
+- **Slate** (`/api/scoreboard`): this week's games from ESPN, or next week's once every game is final,
+  each with the model's pregame pick. `#game=<espn event id>` links open any game.
+- **Live game** (`/api/game?event_id=`): scoreboard, possession and down & distance, a win-probability
+  chart over game time, and a play-by-play feed with the swing each play caused (polled every 5s live).
+- **Markets** (`/api/markets?event_id=`): every market across the game's Polymarket events -- game lines,
+  halves and quarters, exact margins, player props, first TD scorer, highest-scoring quarter (~550 for a
+  typical game). Each outcome shows the ask, the model's probability (live once the game starts) and
+  the edge; unmodeled and illiquid markets are flagged, not hidden.
+- **Paper trading** (`POST /api/trade`): buy any outcome at a freshly re-read ask, with the suggested
+  fractional-Kelly stake or your own. Positions land in the same `state/portfolio.json` the CLI uses and
+  settle automatically when the game ends (Polymarket's resolution for props; final score and ESPN
+  linescores for half/quarter lines).
 
 ## Layout
 ```
 src/elo.py                   Elo ratings + win probability
 src/espn_feed.py             live game state from ESPN (default live source)
-src/win_probability.py       blends Elo prior with live game state
+src/win_probability.py       live win prob: score + remaining-time margin distribution + field position
 src/insights.py              GameState stream -> plain-English WP narration
 src/cv/                      scoreboard OCR, ball tracking, trajectory projection, browser capture
 src/radio_feed.py            local live radio transcription + play-event keyword spotting
 src/fusion.py                merges ESPN/radio/CV/news into one arrival-ordered event stream
 src/news_signal.py           off-field injury/news signal from trusted X accounts
 src/polymarket_client.py     Polymarket Gamma/CLOB reads (read-only, no auth)
-src/scoring_model.py         calibrated margin/total distribution -- prices every market family
+src/scoring_model.py         calibrated margin/total distribution -- prices every market family, pregame or live
 src/market_catalog.py        generic market-type -> pricing-spec registry and text parsers
 src/market_log.py            appends every discovered market to state/market_catalog.csv
 src/strategy.py              edge detection + Kelly position sizing
 src/paper_broker.py          simulated bankroll, positions, trade log, P&L
-web/app.py                   Flask API for the local dashboard (wraps the modules above, no new logic)
-web/static/index.html        dashboard page: game picker, live win-prob chart, insight feed, portfolio
+web/app.py                   Flask API for the local dashboard: slate, game feed, market board, paper trades
+web/static/index.html        dashboard page: slate, live game + play-by-play, market board, portfolio
 main.py                      CLI: pregame / trade-game / live / watch-play / watch-all / settle / status / web
 ```
 State (Elo ratings, portfolio, trade log, market catalog) lives in gitignored flat JSON/CSV under
