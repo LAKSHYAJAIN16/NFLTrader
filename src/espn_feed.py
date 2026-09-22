@@ -90,11 +90,20 @@ def _state_from_summary(data, home_abbr, away_abbr, timestamp=None):
     if down is not None and not (1 <= down <= 4):
         down = None
 
+    quarter = status.get("period", 1) or 1
+    clock_seconds = _parse_clock(status.get("displayClock"))
+    status_type = status.get("type", {})
+    if status_type.get("completed"):
+        # ESPN drops period/displayClock once a game is final, which would otherwise
+        # fall back to Q1 and make the model think the whole game is still left.
+        quarter = 5 if "OT" in status_type.get("detail", "") else max(quarter, 4)
+        clock_seconds = 0
+
     return GameState(
         home_score=scores.get(home_abbr, 0),
         away_score=scores.get(away_abbr, 0),
-        quarter=status.get("period", 1) or 1,
-        clock_seconds=_parse_clock(status.get("displayClock")),
+        quarter=quarter,
+        clock_seconds=clock_seconds,
         possession_home=possession_home,
         down=down,
         distance=situation.get("distance"),

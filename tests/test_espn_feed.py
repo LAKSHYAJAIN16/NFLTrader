@@ -75,3 +75,33 @@ def test_changed_true_when_score_moves():
     a = espn_feed._state_from_summary(PREGAME_SUMMARY, "BUF", "DET")
     b = espn_feed._state_from_summary(LIVE_SUMMARY, "BUF", "DET")
     assert espn_feed._changed(a, b) is True
+
+
+FINAL_SUMMARY = {
+    "header": {
+        "competitions": [{
+            "status": {"type": {"state": "post", "completed": True, "detail": "Final"}},
+            "competitors": [
+                {"id": "2", "homeAway": "home", "score": "41",
+                 "team": {"id": "2", "abbreviation": "BUF"}},
+                {"id": "8", "homeAway": "away", "score": "31",
+                 "team": {"id": "8", "abbreviation": "DET"}},
+            ],
+        }]
+    }
+}
+
+
+def test_final_game_reports_end_of_regulation_not_q1():
+    # ESPN omits period/displayClock on final games
+    state = espn_feed._state_from_summary(FINAL_SUMMARY, "BUF", "DET")
+    assert state.quarter == 4
+    assert state.clock_seconds == 0
+
+
+def test_final_ot_game_reports_overtime():
+    summary = {"header": {"competitions": [dict(FINAL_SUMMARY["header"]["competitions"][0],
+                                                status={"type": {"completed": True, "detail": "Final/OT"}})]}}
+    state = espn_feed._state_from_summary(summary, "BUF", "DET")
+    assert state.quarter == 5
+    assert state.clock_seconds == 0
