@@ -114,3 +114,58 @@ class _FakeElo:
 
     def get(self, team):
         return self.ratings.get(team, 1500.0)
+
+
+# ---- live pricing ----
+
+from src.elo import EloRatings
+from src.scoring_model import LiveState
+
+
+def _even_model():
+    cal = Calibration(margin_slope=1 / 25.0, margin_intercept=0.0, margin_std=13.5,
+                      total_mean=45.0, total_std=10.0)
+    return ScoringModel(EloRatings({"KC": 1435.0, "SF": 1500.0}), cal)  # KC + home field = even
+
+
+def test_live_before_kickoff_matches_pregame():
+    model = _even_model()
+    live = LiveState(0, 0, quarter=1, clock_seconds=900)
+    assert model.price(("total_over", 44.5, "full"), "KC", "SF", live) == pytest.approx(
+        model.price(("total_over", 44.5, "full"), "KC", "SF"))
+
+
+def test_live_total_accounts_for_points_already_scored():
+    model = _even_model()
+    live = LiveState(28, 21, quarter=3, clock_seconds=900, quarter_scores=[(14, 7), (14, 14)])
+    # 49 on the board at half: over 44.5 is all but settled
+    assert model.price(("total_over", 44.5, "full"), "KC", "SF", live) > 0.99
+    assert model.price(("total_over", 44.5, "full"), "KC", "SF") < 0.6
+
+
+def test_finished_quarter_settles_from_linescores():
+    model = _even_model()
+    live = LiveState(14, 7, quarter=2, clock_seconds=600, quarter_scores=[(14, 7), (0, 0)])
+    assert model.price(("win", "home", "Q1"), "KC", "SF", live) > 0.99
+    assert model.price(("total_under", 20.5, "Q1"), "KC", "SF", live) < 0.01
+    # Q3 hasn't started: still priced pregame
+    assert model.price(("win", "home", "Q3"), "KC", "SF", live) == pytest.approx(
+        model.price(("win", "home", "Q3"), "KC", "SF"))
+
+
+def test_in_progress_quarter_blends_score_and_time_left():
+    model = _even_model()
+    early = LiveState(7, 0, quarter=2, clock_seconds=840, quarter_scores=[(0, 0), (7, 0)])
+    late = LiveState(7, 0, quarter=2, clock_seconds=30, quarter_scores=[(0, 0), (7, 0)])
+    p_early = model.price(("cover", "home", -3.5, "Q2"), "KC", "SF", early)
+    p_late = model.price(("cover", "home", -3.5, "Q2"), "KC", "SF", late)
+    assert 0.5 < p_early < p_late
+
+
+def test_final_game_prices_resolve():
+    model = _even_model()
+    live = LiveState(24, 20, quarter=4, clock_seconds=0, final=True,
+                     quarter_scores=[(7, 7), (3, 6), (7, 0), (7, 7)])
+    assert model.price(("win", "home", "full"), "KC", "SF", live) > 0.99
+    assert model.price(("cover", "away", 3.5, "full"), "KC", "SF", live) < 0.01
+    assert model.price(("margin_bucket", "home", 1, 6), "KC", "SF", live) > 0.99

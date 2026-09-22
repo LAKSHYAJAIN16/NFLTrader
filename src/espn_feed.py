@@ -181,8 +181,16 @@ def teams_from_summary(data):
             "short_name": team.get("name", team["abbreviation"]),
             "color": team.get("color"),
             "score": int(c.get("score", 0) or 0),
+            "linescores": [int(float(ls.get("displayValue", ls.get("value", 0)) or 0))
+                           for ls in c.get("linescores") or []],
         }
     return teams
+
+
+def quarter_scores(teams):
+    """[(home, away), ...] points per period so far, from ESPN's linescores."""
+    home, away = teams["home"]["linescores"], teams["away"]["linescores"]
+    return [(h, a) for h, a in zip(home, away)]
 
 
 def plays_from_summary(data):

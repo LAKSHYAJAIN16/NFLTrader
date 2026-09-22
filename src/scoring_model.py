@@ -22,11 +22,33 @@ invented.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 import config
+from src import win_probability
 
 PERIOD_FRACTIONS = {"full": 1.0, "1H": 0.5, "2H": 0.5, "Q1": 0.25, "Q2": 0.25, "Q3": 0.25, "Q4": 0.25}
+
+# Game-clock window (seconds elapsed) each period covers, and the quarters in it.
+# Half/quarter markets settle on regulation, so their windows end at 3600.
+PERIOD_WINDOWS = {"full": (0, None), "1H": (0, 1800), "2H": (1800, 3600),
+                  "Q1": (0, 900), "Q2": (900, 1800), "Q3": (1800, 2700), "Q4": (2700, 3600)}
+PERIOD_QUARTERS = {"1H": (1, 2), "2H": (3, 4), "Q1": (1,), "Q2": (2,), "Q3": (3,), "Q4": (4,)}
+
+
+@dataclass
+class LiveState:
+    """What's happened so far, for pricing markets mid-game."""
+    home_score: int
+    away_score: int
+    quarter: int
+    clock_seconds: int
+    possession_home: Optional[bool] = None
+    yards_to_endzone: Optional[int] = None
+    # points per quarter so far, [(home, away), ...] for Q1, Q2, ... (current one partial)
+    quarter_scores: List[Tuple[int, int]] = field(default_factory=list)
+    final: bool = False
 
 
 @dataclass
@@ -101,35 +123,73 @@ class ScoringModel:
             std_total=full.std_total * math.sqrt(fraction),
         )
 
-    def price(self, spec, home_abbr, away_abbr) -> float:
-        """Prices any (kind, ...) spec produced by src/market_catalog.py."""
+    def live_period(self, home_abbr, away_abbr, period, live: LiveState) -> ScoreDistribution:
+        """The period's distribution given the game so far: points already
+        scored in that period, plus the pregame rate for the time it has left
+        (std shrinking with sqrt of that time), plus the expected points of
+        whoever has the ball if the period is still running. Same model as
+        win_probability.live_home_win_prob, applied per period."""
+        start, end = PERIOD_WINDOWS[period]
+        elapsed = win_probability.seconds_elapsed(live.quarter, live.clock_seconds)
+        if elapsed <= start and not live.final:
+            return self.period(home_abbr, away_abbr, period)
+
+        if period == "full":
+            known_margin = live.home_score - live.away_score
+            known_total = live.home_score + live.away_score
+            secs_left = 0 if live.final else win_probability.seconds_remaining(live.quarter, live.clock_seconds)
+        else:
+            quarters = PERIOD_QUARTERS[period]
+            scored = [live.quarter_scores[q - 1] for q in quarters if q <= len(live.quarter_scores)]
+            known_margin = sum(h - a for h, a in scored)
+            known_total = sum(h + a for h, a in scored)
+            secs_left = 0 if live.final else max(0, end - elapsed)
+
+        frac_left = min(secs_left, win_probability.REGULATION_SECONDS) / win_probability.REGULATION_SECONDS
+        full = self.full_game(home_abbr, away_abbr)
+        ep = win_probability.possession_value(live.possession_home, live.yards_to_endzone, secs_left)
+        return ScoreDistribution(
+            mean_margin=known_margin + full.mean_margin * frac_left + ep,
+            std_margin=full.std_margin * math.sqrt(frac_left),
+            mean_total=known_total + full.mean_total * frac_left + abs(ep),
+            std_total=full.std_total * math.sqrt(frac_left),
+        )
+
+    def _dist(self, home_abbr, away_abbr, period, live):
+        if live is None:
+            return self.period(home_abbr, away_abbr, period)
+        return self.live_period(home_abbr, away_abbr, period, live)
+
+    def price(self, spec, home_abbr, away_abbr, live: Optional[LiveState] = None) -> float:
+        """Prices any (kind, ...) spec produced by src/market_catalog.py -
+        pregame, or given `live` state, conditioned on the game so far."""
         kind = spec[0]
 
         if kind == "win":
             _, side, period = spec
-            dist = self.period(home_abbr, away_abbr, period)
+            dist = self._dist(home_abbr, away_abbr, period, live)
             p = home_win_prob(dist)
             return p if side == "home" else 1.0 - p
 
         if kind == "cover":
             _, side, line, period = spec
-            dist = self.period(home_abbr, away_abbr, period)
+            dist = self._dist(home_abbr, away_abbr, period, live)
             return spread_cover_prob(dist, side, line)
 
         if kind in ("total_over", "total_under"):
             _, line, period = spec
-            dist = self.period(home_abbr, away_abbr, period)
+            dist = self._dist(home_abbr, away_abbr, period, live)
             return total_over_prob(dist, line) if kind == "total_over" else total_under_prob(dist, line)
 
         if kind in ("team_total_over", "team_total_under"):
             _, side, line, period = spec
-            dist = self.period(home_abbr, away_abbr, period)
+            dist = self._dist(home_abbr, away_abbr, period, live)
             return (team_total_over_prob(dist, side, line) if kind == "team_total_over"
                     else team_total_under_prob(dist, side, line))
 
         if kind in ("margin_bucket", "margin_bucket_no"):
             _, side, low, high = spec
-            dist = self.full_game(home_abbr, away_abbr)
+            dist = self._dist(home_abbr, away_abbr, "full", live)
             p = margin_bucket_prob(dist, side, low, high)
             return p if kind == "margin_bucket" else 1.0 - p
 
@@ -239,7 +299,8 @@ def _team_score(dist: ScoreDistribution, side: str):
 
 def _norm_cdf(x, mean, std):
     if std <= 0:
-        return 1.0 if x < mean else 0.0
+        # a settled value: P(X <= x) is 1 once x reaches it
+        return 1.0 if x >= mean else 0.0
     return 0.5 * (1.0 + math.erf((x - mean) / (std * math.sqrt(2.0))))
 
 
