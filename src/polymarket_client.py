@@ -144,27 +144,92 @@ def get_event_markets(slug_or_url):
     if not home or not away:
         raise ValueError(f"Event '{slug}' is missing home/away ordering")
 
+    markets = _markets_from_event(event)
+
+    home_info = {"abbr": _team_abbr(home), "alias": home.get("alias"), "name": home.get("name")}
+    away_info = {"abbr": _team_abbr(away), "alias": away.get("alias"), "name": away.get("name")}
+    return home_info, away_info, markets
+
+
+def _markets_from_event(event):
     markets = []
     for m in event.get("markets", []):
         outcomes = _parse_json_field(m.get("outcomes"))
         prices = _parse_json_field(m.get("outcomePrices"))
         if not outcomes or not prices or len(outcomes) != len(prices):
             continue
+        prices = [float(p) for p in prices]
         markets.append({
             "market_id": m.get("conditionId") or m.get("id"),
             "question": m.get("question", ""),
             "group_item_title": m.get("groupItemTitle"),
             "sports_market_type": m.get("sportsMarketType"),
             "outcomes": outcomes,
-            "prices": [float(p) for p in prices],
+            "prices": prices,
+            "asks": _outcome_asks(m, prices),
             "volume": float(m.get("volumeNum") or 0.0),
             "closed": m.get("closed", False),
             "active": m.get("active", True),
             "game_start": m.get("gameStartTime"),
+            "event_slug": event.get("slug"),
         })
+    return markets
 
-    home_info = {"abbr": _team_abbr(home), "alias": home.get("alias"), "name": home.get("name")}
-    away_info = {"abbr": _team_abbr(away), "alias": away.get("alias"), "name": away.get("name")}
+
+def _outcome_asks(m, prices):
+    """What buying each outcome actually costs right now: the first outcome's
+    token trades at bestAsk, and buying the second is selling the first at
+    bestBid (1 - bestBid). Falls back to the displayed price when the book
+    is empty on that side."""
+    if len(prices) != 2:
+        return list(prices)
+    best_ask, best_bid = m.get("bestAsk"), m.get("bestBid")
+    first = float(best_ask) if best_ask not in (None, "") and 0 < float(best_ask) < 1 else prices[0]
+    second = 1 - float(best_bid) if best_bid not in (None, "") and 0 < float(best_bid) < 1 else prices[1]
+    return [round(first, 4), round(second, 4)]
+
+
+def find_game_event_slugs(home_name, away_name, kickoff_iso):
+    """Every Polymarket event for one game: the main game-lines event plus its
+    siblings (player props, first TD scorer, highest-scoring quarter...), which
+    share its slug as a prefix. Matched on team names and kickoff date, since
+    event slugs use Polymarket's own abbreviations. [] if Polymarket doesn't
+    list the game."""
+    from datetime import datetime, timedelta
+
+    kickoff = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+    wanted = {home_name.lower(), away_name.lower()}
+    events = _fetch_nfl_events()
+
+    def plays_on_kickoff_day(event):
+        for m in event.get("markets", []):
+            start = m.get("gameStartTime")
+            if start:
+                when = datetime.fromisoformat(start.replace(" ", "T").replace("+00", "+00:00").replace("Z", "+00:00"))
+                return abs(when - kickoff) < timedelta(hours=18)
+        return False
+
+    candidates = [e for e in events
+                  if {(t.get("name") or "").lower() for t in e.get("teams") or []} == wanted
+                  and plays_on_kickoff_day(e)]
+    if not candidates:
+        return []
+    main = min(candidates, key=lambda e: len(e.get("slug", "")))["slug"]
+    return sorted({e["slug"] for e in events if e.get("slug", "").startswith(main)},
+                  key=lambda slug: (slug != main, slug))
+
+
+def get_game_markets(slugs):
+    """Every market across a game's events (see find_game_event_slugs), fresh
+    from the API. Returns (home_info, away_info, markets) like get_event_markets;
+    each market carries its `event_slug`."""
+    home_info = away_info = None
+    markets = []
+    for slug in slugs:
+        home, away, event_markets = get_event_markets(slug)
+        if home_info is None:
+            home_info, away_info = home, away
+        markets.extend(event_markets)
     return home_info, away_info, markets
 
 
