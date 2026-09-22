@@ -5,15 +5,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from src.cv.game_state import GameState
+from src.elo import EloRatings
 from web import app as web_app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     web_app.app.testing = True
-    web_app._live_games.clear()
-    web_app._event_ids.clear()
+    # keep tests off the network / real Elo bootstrap: a flat 1500-rated league
+    monkeypatch.setattr(web_app, "_elo", EloRatings({"KC": 1500.0, "SF": 1500.0}))
     return web_app.app.test_client()
 
 
@@ -32,32 +32,73 @@ def test_status_reflects_a_fresh_portfolio(client, monkeypatch):
     assert body["open_positions"] == []
 
 
-def test_game_requires_both_teams(client):
-    resp = client.get("/api/game?home=KC")
+def _summary(state="in", plays=()):
+    return {
+        "header": {"competitions": [{
+            "date": "2026-09-27T17:00Z",
+            "status": {"period": 2, "displayClock": "5:00",
+                       "type": {"state": state, "completed": state == "post", "shortDetail": "2nd 5:00"}},
+            "situation": {"possession": "12", "down": 1, "distance": 10, "yardLine": 40,
+                          "downDistanceText": "1st & 10 at SF 40"},
+            "competitors": [
+                {"homeAway": "home", "score": "10",
+                 "team": {"id": "12", "abbreviation": "KC", "displayName": "Kansas City Chiefs"}},
+                {"homeAway": "away", "score": "3",
+                 "team": {"id": "25", "abbreviation": "SF", "displayName": "San Francisco 49ers"}},
+            ],
+        }]},
+        "drives": {"previous": [{"plays": list(plays)}]},
+    }
+
+
+def _play(pid, text, home, away, quarter=1, clock="10:00", scoring=False, offense="12"):
+    return {"id": pid, "text": text, "type": {"text": "Rush"}, "homeScore": home, "awayScore": away,
+            "period": {"number": quarter}, "clock": {"displayValue": clock}, "scoringPlay": scoring,
+            "start": {"team": {"id": offense}, "downDistanceText": "1st & 10 at KC 25"},
+            "end": {"team": {"id": offense}, "yardsToEndzone": 60}}
+
+
+def test_game_requires_event_id(client):
+    resp = client.get("/api/game")
     assert resp.status_code == 400
 
 
-def test_game_404s_when_espn_has_no_such_matchup(client, monkeypatch):
-    monkeypatch.setattr(web_app.espn_feed, "find_event_id", lambda home, away: None)
-    resp = client.get("/api/game?home=KC&away=SF")
-    assert resp.status_code == 404
+def test_game_502s_when_espn_fails(client, monkeypatch):
+    def boom(event_id):
+        raise RuntimeError("ESPN down")
+    monkeypatch.setattr(web_app.espn_feed, "read_summary", boom)
+    resp = client.get("/api/game?event_id=1")
+    assert resp.status_code == 502
+    assert "ESPN down" in resp.get_json()["error"]
 
 
-def test_game_polls_and_returns_win_probability(client, monkeypatch):
-    monkeypatch.setattr(web_app.espn_feed, "find_event_id", lambda home, away: "12345")
-    state = GameState(home_score=10, away_score=3, quarter=2, clock_seconds=300,
-                       possession_home=True, down=1, distance=10, yard_line=40)
-    monkeypatch.setattr(web_app.espn_feed, "read_game_state", lambda event_id, home, away: state)
+def test_game_returns_play_by_play_with_win_prob_swings(client, monkeypatch):
+    plays = [_play("1", "P.Mahomes 12 yd run", 0, 0),
+             _play("2", "P.Mahomes pass to T.Kelce for TD", 7, 0, clock="6:00", scoring=True)]
+    monkeypatch.setattr(web_app.espn_feed, "read_summary", lambda event_id: _summary(plays=plays))
 
-    resp = client.get("/api/game?home=KC&away=SF")
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["home_score"] == 10
-    assert body["away_score"] == 3
+    body = client.get("/api/game?event_id=1").get_json()
+    assert body["state"] == "in"
+    assert body["home"]["abbr"] == "KC" and body["home"]["score"] == 10
+    assert body["down_distance"] == "1st & 10 at SF 40"
+    assert [p["text"] for p in body["plays"]] == ["P.Mahomes 12 yd run", "P.Mahomes pass to T.Kelce for TD"]
+    td = body["plays"][1]
+    assert td["scoring"] and td["wp_delta"] > 0          # a home TD moves home win prob up
+    assert td["wp_home"] == pytest.approx(body["plays"][0]["wp_home"] + td["wp_delta"])
     assert 0.0 <= body["win_prob_home"] <= 1.0
-    assert body["win_prob_home"] + body["win_prob_away"] == pytest.approx(1.0)
-    assert len(body["history"]) == 1
 
-    # a second poll of the same matchup should accumulate history, not reset it
-    resp2 = client.get("/api/game?home=KC&away=SF")
-    assert len(resp2.get_json()["history"]) == 2
+
+def test_pregame_game_uses_elo_pick_and_has_no_plays(client, monkeypatch):
+    monkeypatch.setattr(web_app.espn_feed, "read_summary", lambda event_id: _summary(state="pre"))
+    body = client.get("/api/game?event_id=1").get_json()
+    assert body["state"] == "pre"
+    assert body["plays"] == []
+    assert body["win_prob_home"] == pytest.approx(body["pregame_home_prob"])
+    assert body["win_prob_home"] > 0.5                   # home-field edge in an even matchup
+
+
+def test_scoreboard_attaches_pregame_pick(client, monkeypatch):
+    monkeypatch.setattr(web_app.espn_feed, "list_games", lambda: [
+        {"event_id": "1", "home_abbr": "KC", "away_abbr": "SF", "state": "pre"}])
+    games = client.get("/api/scoreboard").get_json()
+    assert 0.5 < games[0]["pregame_home_prob"] < 1.0

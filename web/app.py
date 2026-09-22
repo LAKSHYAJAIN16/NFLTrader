@@ -1,6 +1,6 @@
 """Local web dashboard for NFLTrader.
 
-Serves the same live win-probability model, insight narration, and paper
+Serves the same live win-probability model, ESPN play-by-play, and paper
 portfolio the CLI uses, over a small JSON API plus one static page - no
 build step, no new state format, no real money anywhere here either.
 
@@ -13,48 +13,54 @@ it's running on (or another machine on the same network if you pass
 
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from src import espn_feed, insights
+from src import data_loader, espn_feed, win_probability
 from src.elo import EloRatings
 from src.paper_broker import PaperBroker
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-MAX_HISTORY_POINTS = 200
 
 app = Flask(__name__, static_folder=None)
 
 _elo = None
-_live_games = {}   # (home_abbr, away_abbr) -> _LiveGame
-_event_ids = {}    # (home_abbr, away_abbr) -> ESPN event id
-
-
-class _LiveGame:
-    """Holds the one running InsightEngine + win-prob history for a given
-    matchup so repeated polls narrate deltas instead of recomputing cold
-    each time - mirrors what `main.py live` does in a single process."""
-
-    def __init__(self, home_abbr, away_abbr, pregame_home_prob):
-        self.engine = insights.InsightEngine(pregame_home_prob, home_abbr=home_abbr, away_abbr=away_abbr)
-        self.history = []  # [{"t": epoch_seconds, "wp": home_win_prob}, ...]
-
-    def poll(self, event_id, home_abbr, away_abbr):
-        state = espn_feed.read_game_state(event_id, home_abbr, away_abbr)
-        insight = self.engine.process(state)
-        self.history.append({"t": time.time(), "wp": self.engine.win_prob})
-        del self.history[:-MAX_HISTORY_POINTS]
-        return state, insight
 
 
 def _get_elo():
+    """Same first-run bootstrap as the CLI: without it every matchup would read
+    as a coin flip plus home-field edge."""
     global _elo
     if _elo is None:
         _elo = EloRatings.load()
+        if not _elo.ratings:
+            data_loader.bootstrap_elo(_elo)
+            _elo.save()
     return _elo
+
+
+def _pregame_home_prob(home_abbr, away_abbr):
+    return _get_elo().expected_home_win_prob(espn_feed.to_elo_abbr(home_abbr),
+                                             espn_feed.to_elo_abbr(away_abbr))
+
+
+def _with_win_prob(plays, pregame_home_prob):
+    """Annotates each play with the model's home win probability after it and
+    the swing from the play before - the same model `main.py live` runs."""
+    wp_before = pregame_home_prob
+    for play in plays:
+        wp = win_probability.live_home_win_prob(
+            pregame_home_prob, play["home_score"], play["away_score"],
+            play["quarter"], play["clock_seconds"],
+            play["possession_home"], play["yards_to_endzone"],
+        )
+        play["wp_home"] = wp
+        play["wp_delta"] = wp - wp_before
+        play["minor"] = play["type"] in espn_feed.NON_ACTION_PLAY_TYPES
+        wp_before = wp
+    return plays
 
 
 @app.get("/")
@@ -65,50 +71,57 @@ def index():
 @app.get("/api/scoreboard")
 def api_scoreboard():
     try:
-        return jsonify(espn_feed.list_games())
+        games = espn_feed.list_games()
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+    for g in games:
+        g["pregame_home_prob"] = _pregame_home_prob(g["home_abbr"], g["away_abbr"])
+    return jsonify(games)
 
 
 @app.get("/api/game")
 def api_game():
-    home = (request.args.get("home") or "").upper()
-    away = (request.args.get("away") or "").upper()
-    if not home or not away:
-        return jsonify({"error": "home and away query params are required"}), 400
-    key = (home, away)
-
-    if key not in _event_ids:
-        try:
-            event_id = espn_feed.find_event_id(home, away)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 502
-        if not event_id:
-            return jsonify({"error": f"No {away} @ {home} game found on ESPN's current scoreboard"}), 404
-        _event_ids[key] = event_id
-
-    if key not in _live_games:
-        pregame_home_prob = _get_elo().expected_home_win_prob(home, away)
-        _live_games[key] = _LiveGame(home, away, pregame_home_prob)
-    game = _live_games[key]
+    event_id = request.args.get("event_id", "").strip()
+    if not event_id:
+        return jsonify({"error": "event_id query param is required"}), 400
 
     try:
-        state, insight = game.poll(_event_ids[key], home, away)
+        summary = espn_feed.read_summary(event_id)
+        teams = espn_feed.teams_from_summary(summary)
+        home, away = teams["home"], teams["away"]
+        state = espn_feed._state_from_summary(summary, home["abbr"], away["abbr"])
+        plays = espn_feed.plays_from_summary(summary)
     except Exception as e:
-        return jsonify({"error": str(e)}), 502
+        return jsonify({"error": f"Couldn't read game {event_id} from ESPN: {e}"}), 502
+
+    comp = summary["header"]["competitions"][0]
+    status_type = comp["status"].get("type", {})
+    game_state = status_type.get("state", "pre")
+
+    pregame = _pregame_home_prob(home["abbr"], away["abbr"])
+    _with_win_prob(plays, pregame)
+    if game_state == "pre":
+        win_prob_home = pregame
+    else:
+        win_prob_home = win_probability.live_home_win_prob(
+            pregame, state.home_score, state.away_score, state.quarter,
+            state.clock_seconds, state.possession_home, state.yard_line,
+        )
 
     return jsonify({
-        "home_abbr": home,
-        "away_abbr": away,
-        "home_score": state.home_score,
-        "away_score": state.away_score,
+        "event_id": event_id,
+        "state": game_state,
+        "status": status_type.get("shortDetail", ""),
+        "kickoff": comp.get("date"),
+        "home": home,
+        "away": away,
         "quarter": state.quarter,
         "clock_seconds": state.clock_seconds,
         "possession_home": state.possession_home,
-        "win_prob_home": game.engine.win_prob,
-        "win_prob_away": 1 - game.engine.win_prob,
-        "insight": insight.message if insight else None,
-        "history": game.history,
+        "down_distance": comp.get("situation", {}).get("downDistanceText"),
+        "pregame_home_prob": pregame,
+        "win_prob_home": win_prob_home,
+        "plays": plays,
     })
 
 
