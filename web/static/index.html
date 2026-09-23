@@ -331,7 +331,8 @@
     .play .swing { grid-column: 2; text-align: left; padding: 0; }
     .q-head { padding: 12px 16px 6px; }
     .mk-head, .mk, .mk-cols, .mk-sec-head, .mk-positions { padding-left: 14px; padding-right: 14px; }
-    .mk-cols, .oc { grid-template-columns: minmax(0, 1fr) 40px 42px 46px 70px; gap: 6px; }
+    .mk-cols, .oc { grid-template-columns: minmax(0, 1fr) 38px 40px 42px 86px; gap: 6px; }
+    .buy { min-width: 0; padding: 4px 8px; }
     .pf { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -413,9 +414,9 @@
         </div>
         <div class="pf num">
           <div><span class="k">Bankroll</span><span class="v" id="pf-bankroll">--</span></div>
-          <div><span class="k">At risk, this game</span><span class="v" id="pf-risk">--</span></div>
-          <div><span class="k">Open P&amp;L, this game</span><span class="v" id="pf-open">--</span></div>
-          <div><span class="k">Realized, all games</span><span class="v" id="pf-real">--</span></div>
+          <div title="Staked on open positions in this game"><span class="k">At risk</span><span class="v" id="pf-risk">--</span></div>
+          <div title="Open positions in this game, marked to current prices"><span class="k">Open P&amp;L</span><span class="v" id="pf-open">--</span></div>
+          <div title="Settled positions across all games"><span class="k">Realized</span><span class="v" id="pf-real">--</span></div>
         </div>
         <div class="mk-controls">
           <div class="seg" role="group" aria-label="Which markets">
@@ -910,7 +911,8 @@ function marketRow(m, showGroup) {
 function outcomeRow(m, o, i) {
   const held = !!m.position;
   const canBuy = m.open && !held && o.ask > 0 && o.ask < 1;
-  const edgeCls = o.edge !== null && o.edge >= board.edge_threshold ? "pos" : "";
+  // green means actionable: a real edge on a liquid, open market
+  const edgeCls = o.edge !== null && o.edge >= board.edge_threshold && m.liquid && m.open ? "pos" : "";
   let btn = "";
   if (canBuy) {
     btn = o.stake > 0
