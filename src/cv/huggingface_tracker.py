@@ -24,13 +24,6 @@ two backends.
 
 from src.cv.trajectory import Detection
 
-try:
-    import torch
-    from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
-except ImportError:
-    torch = None
-    AutoModelForZeroShotObjectDetection = None
-    AutoProcessor = None
 
 _DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 _BALL_PROMPT = "football."
@@ -39,12 +32,18 @@ _PERSON_PROMPT = "person."
 
 class HuggingFaceTracker:
     def __init__(self, model_id=_DEFAULT_MODEL_ID, confidence=0.3):
-        if AutoModelForZeroShotObjectDetection is None:
+        # imported here, not at module load: torch + transformers take tens of
+        # seconds and GBs of memory, and only this optional detector needs them
+        try:
+            import torch
+            from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+        except ImportError:
             raise RuntimeError(
                 "transformers and torch are required for the Hugging Face detector. Install with: "
                 "pip install transformers torch (large download; a GPU is strongly recommended for "
                 "anything close to real-time). No API key needed - this runs locally."
-            )
+            ) from None
+        self._torch = torch
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = AutoProcessor.from_pretrained(model_id)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(self.device)
@@ -66,7 +65,7 @@ class HuggingFaceTracker:
     def _detect_prompt(self, image, prompt):
         """Returns a list of (x1, y1, x2, y2) boxes for the given text prompt."""
         inputs = self.processor(images=image, text=prompt, return_tensors="pt").to(self.device)
-        with torch.no_grad():
+        with self._torch.no_grad():
             outputs = self.model(**inputs)
 
         results = self.processor.post_process_grounded_object_detection(
