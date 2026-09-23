@@ -87,9 +87,9 @@ def _model_abbrs(home_abbr, away_abbr):
     return espn_feed.to_elo_abbr(home_abbr), espn_feed.to_elo_abbr(away_abbr)
 
 
-def _pregame_home_prob(home_abbr, away_abbr):
+def _pregame_home_prob(home_abbr, away_abbr, neutral=False):
     model = _get_model()
-    return sm.home_win_prob(model.full_game(*_model_abbrs(home_abbr, away_abbr)))
+    return sm.home_win_prob(model.full_game(*_model_abbrs(home_abbr, away_abbr), neutral=neutral))
 
 
 def _with_win_prob(plays, pregame_home_prob):
@@ -129,6 +129,7 @@ def _game_context(event_id, fresh=False):
         "game_state": status_type.get("state", "pre"),
         "status": status_type.get("shortDetail", ""),
         "kickoff": comp.get("date"),
+        "neutral_site": bool(comp.get("neutralSite")),
     }
 
 
@@ -161,7 +162,7 @@ def api_scoreboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
     for g in games:
-        g["pregame_home_prob"] = _pregame_home_prob(g["home_abbr"], g["away_abbr"])
+        g["pregame_home_prob"] = _pregame_home_prob(g["home_abbr"], g["away_abbr"], g.get("neutral_site", False))
     return jsonify(games)
 
 
@@ -178,7 +179,7 @@ def api_game():
 
     home, away, state = ctx["home"], ctx["away"], ctx["state"]
     plays = [dict(p) for p in ctx["plays"]]
-    pregame = _pregame_home_prob(home["abbr"], away["abbr"])
+    pregame = _pregame_home_prob(home["abbr"], away["abbr"], ctx["neutral_site"])
     _with_win_prob(plays, pregame)
     if ctx["game_state"] == "pre":
         win_prob_home = pregame
@@ -201,6 +202,7 @@ def api_game():
         "possession_home": state.possession_home,
         "down_distance": ctx["comp"].get("situation", {}).get("downDistanceText"),
         "pregame_home_prob": pregame,
+        "neutral_site": ctx["neutral_site"],
         "win_prob_home": win_prob_home,
         "plays": plays,
     })
@@ -253,7 +255,7 @@ def _price_market(raw, poly_teams, ctx, live, bankroll):
         ask = raw["asks"][i] if i < len(raw.get("asks") or []) else raw["prices"][i]
         model_prob = None
         if specs is not None and i < len(specs):
-            model_prob = _get_model().price(specs[i][1], model_home, model_away, live)
+            model_prob = _get_model().price(specs[i][1], model_home, model_away, live, ctx["neutral_site"])
         edge = None if model_prob is None else model_prob - ask
         stake = 0.0
         if edge is not None and edge >= config.EDGE_THRESHOLD and liquid and is_open:

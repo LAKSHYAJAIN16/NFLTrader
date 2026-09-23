@@ -169,3 +169,9 @@ def test_final_game_prices_resolve():
     assert model.price(("win", "home", "full"), "KC", "SF", live) > 0.99
     assert model.price(("cover", "away", 3.5, "full"), "KC", "SF", live) < 0.01
     assert model.price(("margin_bucket", "home", 1, 6), "KC", "SF", live) > 0.99
+
+
+def test_neutral_site_drops_home_field():
+    model = _even_model()   # KC is only "even" thanks to home field
+    assert model.price(("win", "home", "full"), "KC", "SF") == pytest.approx(0.5, abs=0.01)
+    assert model.price(("win", "home", "full"), "KC", "SF", neutral=True) < 0.45

@@ -105,6 +105,7 @@ def list_games():
             "away_color": away["team"].get("color"),
             "home_score": int(home.get("score", 0) or 0),
             "away_score": int(away.get("score", 0) or 0),
+            "neutral_site": bool(comp.get("neutralSite")),
             "state": status_type.get("state", "pre"),
             "status": status_type.get("shortDetail", ""),
             "in_progress": status_type.get("state") == "in",

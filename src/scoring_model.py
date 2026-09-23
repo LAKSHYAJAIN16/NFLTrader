@@ -108,14 +108,17 @@ class ScoringModel:
         self.elo = elo
         self.cal = calibration
 
-    def full_game(self, home_abbr, away_abbr) -> ScoreDistribution:
-        elo_diff = (self.elo.get(home_abbr) + config.ELO_HOME_ADVANTAGE) - self.elo.get(away_abbr)
+    def full_game(self, home_abbr, away_abbr, neutral=False) -> ScoreDistribution:
+        """neutral: a neutral-site game (e.g. international series), where the
+        listed "home" team gets no home-field edge."""
+        home_edge = 0.0 if neutral else config.ELO_HOME_ADVANTAGE
+        elo_diff = (self.elo.get(home_abbr) + home_edge) - self.elo.get(away_abbr)
         mean_margin = self.cal.margin_slope * elo_diff + self.cal.margin_intercept
         return ScoreDistribution(mean_margin, self.cal.margin_std, self.cal.total_mean, self.cal.total_std)
 
-    def period(self, home_abbr, away_abbr, period="full") -> ScoreDistribution:
+    def period(self, home_abbr, away_abbr, period="full", neutral=False) -> ScoreDistribution:
         fraction = PERIOD_FRACTIONS[period]
-        full = self.full_game(home_abbr, away_abbr)
+        full = self.full_game(home_abbr, away_abbr, neutral)
         return ScoreDistribution(
             mean_margin=full.mean_margin * fraction,
             std_margin=full.std_margin * math.sqrt(fraction),
@@ -123,7 +126,7 @@ class ScoringModel:
             std_total=full.std_total * math.sqrt(fraction),
         )
 
-    def live_period(self, home_abbr, away_abbr, period, live: LiveState) -> ScoreDistribution:
+    def live_period(self, home_abbr, away_abbr, period, live: LiveState, neutral=False) -> ScoreDistribution:
         """The period's distribution given the game so far: points already
         scored in that period, plus the pregame rate for the time it has left
         (std shrinking with sqrt of that time), plus the expected points of
@@ -132,7 +135,7 @@ class ScoringModel:
         start, end = PERIOD_WINDOWS[period]
         elapsed = win_probability.seconds_elapsed(live.quarter, live.clock_seconds)
         if elapsed <= start and not live.final:
-            return self.period(home_abbr, away_abbr, period)
+            return self.period(home_abbr, away_abbr, period, neutral)
 
         if period == "full":
             known_margin = live.home_score - live.away_score
@@ -146,7 +149,7 @@ class ScoringModel:
             secs_left = 0 if live.final else max(0, end - elapsed)
 
         frac_left = min(secs_left, win_probability.REGULATION_SECONDS) / win_probability.REGULATION_SECONDS
-        full = self.full_game(home_abbr, away_abbr)
+        full = self.full_game(home_abbr, away_abbr, neutral)
         ep = win_probability.possession_value(live.possession_home, live.yards_to_endzone, secs_left)
         return ScoreDistribution(
             mean_margin=known_margin + full.mean_margin * frac_left + ep,
@@ -155,41 +158,41 @@ class ScoringModel:
             std_total=full.std_total * math.sqrt(frac_left),
         )
 
-    def _dist(self, home_abbr, away_abbr, period, live):
+    def _dist(self, home_abbr, away_abbr, period, live, neutral=False):
         if live is None:
-            return self.period(home_abbr, away_abbr, period)
-        return self.live_period(home_abbr, away_abbr, period, live)
+            return self.period(home_abbr, away_abbr, period, neutral)
+        return self.live_period(home_abbr, away_abbr, period, live, neutral)
 
-    def price(self, spec, home_abbr, away_abbr, live: Optional[LiveState] = None) -> float:
+    def price(self, spec, home_abbr, away_abbr, live: Optional[LiveState] = None, neutral=False) -> float:
         """Prices any (kind, ...) spec produced by src/market_catalog.py -
         pregame, or given `live` state, conditioned on the game so far."""
         kind = spec[0]
 
         if kind == "win":
             _, side, period = spec
-            dist = self._dist(home_abbr, away_abbr, period, live)
+            dist = self._dist(home_abbr, away_abbr, period, live, neutral)
             p = home_win_prob(dist)
             return p if side == "home" else 1.0 - p
 
         if kind == "cover":
             _, side, line, period = spec
-            dist = self._dist(home_abbr, away_abbr, period, live)
+            dist = self._dist(home_abbr, away_abbr, period, live, neutral)
             return spread_cover_prob(dist, side, line)
 
         if kind in ("total_over", "total_under"):
             _, line, period = spec
-            dist = self._dist(home_abbr, away_abbr, period, live)
+            dist = self._dist(home_abbr, away_abbr, period, live, neutral)
             return total_over_prob(dist, line) if kind == "total_over" else total_under_prob(dist, line)
 
         if kind in ("team_total_over", "team_total_under"):
             _, side, line, period = spec
-            dist = self._dist(home_abbr, away_abbr, period, live)
+            dist = self._dist(home_abbr, away_abbr, period, live, neutral)
             return (team_total_over_prob(dist, side, line) if kind == "team_total_over"
                     else team_total_under_prob(dist, side, line))
 
         if kind in ("margin_bucket", "margin_bucket_no"):
             _, side, low, high = spec
-            dist = self._dist(home_abbr, away_abbr, "full", live)
+            dist = self._dist(home_abbr, away_abbr, "full", live, neutral)
             p = margin_bucket_prob(dist, side, low, high)
             return p if kind == "margin_bucket" else 1.0 - p
 
