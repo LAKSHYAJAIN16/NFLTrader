@@ -13,6 +13,12 @@ ELO_K_FACTOR = 20.0
 ELO_HOME_ADVANTAGE = 65.0  # ~ historical NFL home-field edge in Elo points
 ELO_MOV_MULTIPLIER = True  # scale K by margin of victory (538-style)
 
+# Team scoring ratings for totals (scoring_model.TeamScoring). Tuned walk-forward on
+# 2012-2026 nflverse games: total-points RMSE 13.64 vs 13.96 for a flat league average.
+TOTALS_K = 0.04              # how far one game's scoring surprise moves a team's rating
+TOTALS_SEASON_KEEP = 0.6     # share of a team's rating carried into a new season
+TOTALS_BASE_RATE = 0.005     # how fast the league-wide scoring level follows the era
+
 # --- Strategy / risk ---
 EDGE_THRESHOLD = 0.05       # min |model_prob - market_prob| to consider a bet
 KELLY_FRACTION = 0.25       # fraction of full Kelly stake actually risked

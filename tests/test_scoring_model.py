@@ -175,3 +175,40 @@ def test_neutral_site_drops_home_field():
     model = _even_model()   # KC is only "even" thanks to home field
     assert model.price(("win", "home", "full"), "KC", "SF") == pytest.approx(0.5, abs=0.01)
     assert model.price(("win", "home", "full"), "KC", "SF", neutral=True) < 0.45
+
+
+# ---- team scoring (totals) ----
+
+from src.scoring_model import TeamScoring
+
+
+def _shootouts_and_rock_fights():
+    ts = TeamScoring(base_total=44.0, k=0.1, season_keep=1.0, base_rate=0.0)
+    for _ in range(20):
+        ts.update(2024, "KC", "SF", 38, 31)    # a shootout matchup, over and over
+        ts.update(2024, "NYG", "TEN", 13, 10)  # a rock fight
+    return ts
+
+
+def test_team_scoring_learns_who_scores():
+    ts = _shootouts_and_rock_fights()
+    assert sum(ts.expected("KC", "SF")) > 55
+    assert sum(ts.expected("NYG", "TEN")) < 33
+    assert 33 < sum(ts.expected("KC", "TEN")) < 55   # cross-matchups land in between
+
+
+def test_team_scoring_regresses_between_seasons():
+    ts = TeamScoring(base_total=44.0, k=0.1, season_keep=0.5, base_rate=0.0)
+    for _ in range(20):
+        ts.update(2024, "KC", "SF", 38, 31)
+    before = ts.offense["KC"]
+    ts.update(2025, "NYG", "TEN", 22, 22)       # first game of a new season
+    assert ts.offense["KC"] == pytest.approx(before * 0.5)
+
+
+def test_model_uses_team_totals_when_calibrated_with_them():
+    cal = Calibration(margin_slope=1 / 25.0, margin_intercept=0.0, margin_std=13.5,
+                      total_mean=44.0, total_std=13.0, team_scoring=_shootouts_and_rock_fights())
+    model = ScoringModel(EloRatings(), cal)
+    assert model.full_game("KC", "SF").mean_total > model.full_game("NYG", "TEN").mean_total + 20
+    assert model.price(("total_over", 44.5, "full"), "NYG", "TEN") < 0.2

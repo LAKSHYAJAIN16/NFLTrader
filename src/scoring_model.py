@@ -58,6 +58,52 @@ class Calibration:
     margin_std: float
     total_mean: float
     total_std: float
+    # With team ratings: expected total = total_slope * ratings' raw total + total_intercept,
+    # and total_std is the residual std around that. Without them, total_mean/total_std are
+    # the flat league-wide numbers every game gets.
+    team_scoring: Optional["TeamScoring"] = None
+    total_slope: float = 1.0
+    total_intercept: float = 0.0
+
+
+class TeamScoring:
+    """Per-team offense and defense ratings in points, so a game's expected
+    total reflects who is playing instead of one league-wide number.
+
+    A team's expected points = half the league's per-game scoring level + its
+    offense rating + the opponent's defense rating (points allowed above
+    average). After each game both ratings move by `k` times how far that
+    score missed; ratings regress toward average each new season, and the
+    league level drifts slowly with the era.
+    """
+
+    def __init__(self, base_total=44.0, k=None, season_keep=None, base_rate=None):
+        self.base_total = base_total
+        self.k = config.TOTALS_K if k is None else k
+        self.season_keep = config.TOTALS_SEASON_KEEP if season_keep is None else season_keep
+        self.base_rate = config.TOTALS_BASE_RATE if base_rate is None else base_rate
+        self.offense = {}
+        self.defense = {}
+        self.season = None
+
+    def expected(self, home, away):
+        half = self.base_total / 2
+        return (half + self.offense.get(home, 0.0) + self.defense.get(away, 0.0),
+                half + self.offense.get(away, 0.0) + self.defense.get(home, 0.0))
+
+    def update(self, season, home, away, home_score, away_score):
+        if season != self.season:
+            self.season = season
+            for ratings in (self.offense, self.defense):
+                for team in ratings:
+                    ratings[team] *= self.season_keep
+        exp_home, exp_away = self.expected(home, away)
+        miss_home, miss_away = home_score - exp_home, away_score - exp_away
+        self.offense[home] = self.offense.get(home, 0.0) + self.k * miss_home
+        self.defense[away] = self.defense.get(away, 0.0) + self.k * miss_home
+        self.offense[away] = self.offense.get(away, 0.0) + self.k * miss_away
+        self.defense[home] = self.defense.get(home, 0.0) + self.k * miss_away
+        self.base_total += self.base_rate * ((home_score + away_score) - self.base_total)
 
 
 @dataclass
@@ -79,13 +125,21 @@ def calibrate(min_season=None, max_season=None):
     games = data_loader.load_completed_games(min_season=min_season, max_season=max_season)
     elo = EloRatings()
 
-    elo_diffs, margins, totals = [], [], []
+    team_scoring = TeamScoring()
+    elo_diffs, margins, totals, total_preds, fit_totals = [], [], [], [], []
+    first_season = games[0]["season"] if games else None
     for g in games:
         elo_diff = (elo.get(g["home_team"]) + config.ELO_HOME_ADVANTAGE) - elo.get(g["away_team"])
         elo_diffs.append(elo_diff)
         margins.append(g["home_score"] - g["away_score"])
         totals.append(g["home_score"] + g["away_score"])
+        # predicted before this game is folded in (walk-forward); skip the first
+        # seasons while every team's rating is still warming up from zero
+        if g["season"] >= first_season + 3:
+            total_preds.append(sum(team_scoring.expected(g["home_team"], g["away_team"])))
+            fit_totals.append(g["home_score"] + g["away_score"])
         elo.update(g["home_team"], g["away_team"], g["home_score"], g["away_score"])
+        team_scoring.update(g["season"], g["home_team"], g["away_team"], g["home_score"], g["away_score"])
 
     if len(games) < 10:
         # not enough history to calibrate a regression - fall back to
@@ -100,7 +154,16 @@ def calibrate(min_season=None, max_season=None):
     total_mean = _mean(totals)
     total_std = _std(totals)
 
-    return elo, Calibration(slope, intercept, margin_std, total_mean, total_std)
+    if len(total_preds) < 10:
+        return elo, Calibration(slope, intercept, margin_std, total_mean, total_std)
+
+    # the ratings over-spread a little; this fit pulls them back toward the mean
+    total_slope, total_intercept = _fit_line(total_preds, fit_totals)
+    total_residual_std = _std([t - (total_slope * p + total_intercept)
+                               for p, t in zip(total_preds, fit_totals)])
+    return elo, Calibration(slope, intercept, margin_std, team_scoring.base_total, total_residual_std,
+                            team_scoring=team_scoring, total_slope=total_slope,
+                            total_intercept=total_intercept)
 
 
 class ScoringModel:
@@ -114,7 +177,11 @@ class ScoringModel:
         home_edge = 0.0 if neutral else config.ELO_HOME_ADVANTAGE
         elo_diff = (self.elo.get(home_abbr) + home_edge) - self.elo.get(away_abbr)
         mean_margin = self.cal.margin_slope * elo_diff + self.cal.margin_intercept
-        return ScoreDistribution(mean_margin, self.cal.margin_std, self.cal.total_mean, self.cal.total_std)
+        mean_total = self.cal.total_mean
+        if self.cal.team_scoring is not None:
+            raw_total = sum(self.cal.team_scoring.expected(home_abbr, away_abbr))
+            mean_total = self.cal.total_slope * raw_total + self.cal.total_intercept
+        return ScoreDistribution(mean_margin, self.cal.margin_std, mean_total, self.cal.total_std)
 
     def period(self, home_abbr, away_abbr, period="full", neutral=False) -> ScoreDistribution:
         fraction = PERIOD_FRACTIONS[period]
