@@ -795,7 +795,7 @@ function marketName(m) {
 }
 
 function edgeCount() {
-  return board && board.available ? board.markets.filter(m => m.best_edge !== null && m.best_edge >= board.edge_threshold).length : 0;
+  return board && board.available ? board.markets.filter(m => m.suggested).length : 0;
 }
 
 function renderBoard() {
@@ -834,12 +834,14 @@ function renderBoard() {
   const matches = m => !q || (marketName(m) + " " + m.question + " " + m.group + " " + (m.period_label || "") + " " + m.outcomes.map(o => o.name).join(" ")).toLowerCase().includes(q);
 
   if (boardView === "edges") {
-    const list = board.markets.filter(m => m.best_edge !== null && m.best_edge >= board.edge_threshold && matches(m))
+    const list = board.markets.filter(m => m.suggested && matches(m))
       .sort((a, b) => b.best_edge - a.best_edge);
     if (!list.length) {
       const liquid = board.markets.filter(m => m.liquid && m.modeled && m.open).length;
-      html += `<div class="mk-empty"><strong>No edges of ${Math.round(board.edge_threshold * 100)}+ points${q ? " matching that" : " right now"}</strong>
-        The model agrees with the market on all ${liquid} liquid, modeled markets. Markets under $${Math.round(board.min_volume)} traded aren't counted.
+      const why = board.pricing === "pregame"
+        ? `Pregame, the market's closing line has beaten this model in backtests, so the board only suggests stakes on very large spread or moneyline edges, and never on totals. ${liquid} liquid, modeled markets checked.`
+        : `No liquid, modeled market is ${Math.round(board.edge_threshold * 100)}+ points off the model right now. ${liquid} checked.`;
+      html += `<div class="mk-empty"><strong>No suggested trades${q ? " matching that" : " right now"}</strong>${why}
         <br><button class="buy" type="button" data-mkview="all">See all ${board.markets.length} markets</button></div>`;
     } else {
       html += colsHead() + list.map(m => marketRow(m, true)).join("");
@@ -891,6 +893,9 @@ function marketRow(m, showGroup) {
   const flags = [];
   if (!m.open) flags.push('<span class="flag">Closed</span>');
   if (!m.modeled) flags.push('<span class="flag">No model</span>');
+  if (m.evidence === "unproven" && m.suggested) flags.push('<span class="flag" title="Pregame, the market has beaten this model in backtests; only very large edges are suggested">Unproven</span>');
+  if (m.evidence === "not_backtested" && m.suggested) flags.push('<span class="flag" title="Live pricing has no historical market data to test against">Not backtested</span>');
+  if (m.evidence === "totals_lose") flags.push('<span class="flag warn" title="In backtests, betting this model against the market on totals lost money">Model loses on totals</span>');
   if (m.modeled && !m.liquid) flags.push(`<span class="flag warn" title="Under $${Math.round(board.min_volume)} traded: the price may not be real">Illiquid</span>`);
   const where = [showGroup ? m.group : null, m.period_label && m.period !== "full" ? m.period_label : (showGroup && m.period === "full" ? "Full game" : null)]
     .filter(Boolean).join(" · ");
@@ -912,7 +917,7 @@ function outcomeRow(m, o, i) {
   const held = !!m.position;
   const canBuy = m.open && !held && o.ask > 0 && o.ask < 1;
   // green means actionable: a real edge on a liquid, open market
-  const edgeCls = o.edge !== null && o.edge >= board.edge_threshold && m.liquid && m.open ? "pos" : "";
+  const edgeCls = o.stake > 0 ? "pos" : "";
   let btn = "";
   if (canBuy) {
     btn = o.stake > 0

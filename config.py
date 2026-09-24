@@ -21,6 +21,12 @@ TOTALS_BASE_RATE = 0.005     # how fast the league-wide scoring level follows th
 
 # --- Strategy / risk ---
 EDGE_THRESHOLD = 0.05       # min |model_prob - market_prob| to consider a bet
+# Pregame the model loses to the market's closing line (tools/backtest_vs_market.py):
+# totals disagreements lose outright, spread disagreements only approach break-even
+# at 6+ points. So pregame suggestions are gated: none on totals, and only very
+# large edges elsewhere.
+PREGAME_EDGE_THRESHOLD = 0.15
+SUGGEST_PREGAME_TOTALS = False
 KELLY_FRACTION = 0.25       # fraction of full Kelly stake actually risked
 MAX_STAKE_PCT = 0.05        # never risk more than 5% of bankroll on one bet
 STARTING_BANKROLL = 1000.0

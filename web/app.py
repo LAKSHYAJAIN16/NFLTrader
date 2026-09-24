@@ -250,6 +250,8 @@ def _price_market(raw, poly_teams, ctx, live, bankroll):
     liquid = raw["volume"] >= config.MIN_MARKET_VOLUME
     model_home, model_away = _model_abbrs(ctx["home"]["abbr"], ctx["away"]["abbr"])
 
+    threshold, evidence = _suggestion_rule(family_period, live)
+
     outcomes = []
     for i, name in enumerate(raw["outcomes"]):
         ask = raw["asks"][i] if i < len(raw.get("asks") or []) else raw["prices"][i]
@@ -258,7 +260,7 @@ def _price_market(raw, poly_teams, ctx, live, bankroll):
             model_prob = _get_model().price(specs[i][1], model_home, model_away, live, ctx["neutral_site"])
         edge = None if model_prob is None else model_prob - ask
         stake = 0.0
-        if edge is not None and edge >= config.EDGE_THRESHOLD and liquid and is_open:
+        if threshold is not None and edge is not None and edge >= threshold and liquid and is_open:
             stake = round(strategy.kelly_stake(model_prob, ask, bankroll), 2)
         outcomes.append({"name": name, "price": raw["prices"][i], "ask": ask,
                          "model": model_prob, "edge": edge, "stake": stake,
@@ -278,8 +280,23 @@ def _price_market(raw, poly_teams, ctx, live, bankroll):
         "open": is_open,
         "modeled": specs is not None,
         "best_edge": max(edges) if edges and liquid and is_open else None,
+        "suggested": any(o["stake"] > 0 for o in outcomes),
+        "evidence": evidence if specs is not None else None,
         "outcomes": outcomes,
     }
+
+
+def _suggestion_rule(family_period, live):
+    """(edge threshold or None, evidence note) for suggesting a stake on this
+    market, per tools/backtest_vs_market.py: pregame the closing line beats the
+    model, totals disagreements lose, and spreads only approach break-even at
+    very large gaps. Live pricing has no historical market data to test against."""
+    family = family_period[0] if family_period else None
+    if live is not None:
+        return config.EDGE_THRESHOLD, "not_backtested"
+    if family in ("total", "team_total") and not config.SUGGEST_PREGAME_TOTALS:
+        return None, "totals_lose"
+    return config.PREGAME_EDGE_THRESHOLD, "unproven"
 
 
 def _resolved_outcome(raw):

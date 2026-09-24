@@ -174,7 +174,10 @@ def test_markets_price_every_market_and_flag_what_they_cant(client, monkeypatch)
     assert sf["model"] == pytest.approx(0.5, abs=0.02) and sf["edge"] > 0.15 and sf["stake"] > 0
     assert kc["edge"] < 0 and kc["stake"] == 0
 
-    assert by_id["tot"]["outcomes"][0]["stake"] > 0             # Over 44.5 at 30c vs ~50%
+    # Over 44.5 at 30c vs ~50%: a big edge, but pregame totals lose in the backtest
+    assert by_id["tot"]["outcomes"][0]["edge"] > 0.15
+    assert by_id["tot"]["outcomes"][0]["stake"] == 0 and by_id["tot"]["evidence"] == "totals_lose"
+    assert by_id["ml"]["evidence"] == "unproven" and by_id["ml"]["suggested"]
     assert not by_id["thin"]["liquid"] and by_id["thin"]["outcomes"][0]["stake"] == 0
     assert by_id["thin"]["best_edge"] is None
     prop = by_id["prop"]
@@ -251,3 +254,19 @@ def test_final_game_settles_quarter_and_prop_positions(client, monkeypatch):
     assert status["q1"]["status"] == "settled" and status["q1"]["won"] is True
     assert status["prop"]["status"] == "settled" and status["prop"]["won"] is False
     assert body["portfolio"]["settled_bets"] == 2
+
+
+def test_pregame_suggestions_need_a_large_edge(client, monkeypatch):
+    # SF at 42c vs ~50%: an 8-pt edge clears the old 5-pt bar but not the pregame gate
+    markets = [_market("ml", "moneyline", "49ers vs. Chiefs", ["49ers", "Chiefs"], [0.42, 0.58])]
+    _board(monkeypatch, _summary(state="pre"), markets)
+    sf = client.get("/api/markets?event_id=1").get_json()["markets"][0]["outcomes"][0]
+    assert sf["edge"] > 0.05 and sf["stake"] == 0
+
+
+def test_live_suggestions_use_the_normal_threshold_and_say_so(client, monkeypatch):
+    summary = _summary(state="in", home_score="28", away_score="21", linescores=[(14, 7), (14, 14)])
+    _board(monkeypatch, summary, _pregame_markets())
+    by_id = {m["id"]: m for m in client.get("/api/markets?event_id=1").get_json()["markets"]}
+    assert by_id["tot"]["evidence"] == "not_backtested"
+    assert by_id["tot"]["outcomes"][0]["stake"] > 0     # live totals can suggest again
